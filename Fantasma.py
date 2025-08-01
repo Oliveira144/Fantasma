@@ -52,25 +52,32 @@ class LotofacilGenerator:
     def selecionar_dezenas_estrategicas(self):
         selecionadas = set()
         
-        # 1. Adicionar números quentes com verificação de tamanho
+        # 1. Adicionar números quentes (repetidos)
         repetir = min(self.estatisticas['repeticao_esperada'], len(self.ultimo_sorteio))
         if repetir > 0:
             selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
         
-        # 2. Adicionar números frios com verificação de tamanho
-        disponiveis = list(set(self.dezenas_fora) - selecionadas)
-        adicionar = min(18 - len(selecionadas), len(disponiveis))
-        if adicionar > 0:
-            selecionadas.update(random.sample(disponiveis, adicionar))
+        # 2. Adicionar números frios (dezenas_fora)
+        disponiveis_frios = list(set(self.dezenas_fora) - selecionadas)
+        adicionar_frios = min(18 - len(selecionadas), len(disponiveis_frios))
+        if adicionar_frios > 0:
+            selecionadas.update(random.sample(disponiveis_frios, adicionar_frios))
         
-        # 3. Completar com números aleatórios se necessário
+        # 3. Completar com números quentes restantes se necessário
         if len(selecionadas) < 18:
-            disponiveis = list(set(self.todas_dezenas) - selecionadas)
-            adicionar = 18 - len(selecionadas)
-            amostra = random.sample(disponiveis, min(adicionar, len(disponiveis)))
-            selecionadas.update(amostra)
+            disponiveis_quentes = list(set(self.ultimo_sorteio) - selecionadas)
+            adicionar_quentes = min(18 - len(selecionadas), len(disponiveis_quentes))
+            if adicionar_quentes > 0:
+                 selecionadas.update(random.sample(disponiveis_quentes, adicionar_quentes))
+
+        # 4. Completar com números aleatórios se necessário para garantir 18 dezenas
+        if len(selecionadas) < 18:
+            disponiveis_gerais = list(set(self.todas_dezenas) - selecionadas)
+            adicionar_aleatorios = 18 - len(selecionadas)
+            if adicionar_aleatorios > 0:
+                selecionadas.update(random.sample(disponiveis_gerais, adicionar_aleatorios))
         
-        # 4. Balanceamento
+        # 5. Balanceamento e Otimização
         selecionadas = self.balancear_quadrantes(selecionadas)
         selecionadas = self.otimizar_diversidade(selecionadas)
         
@@ -78,6 +85,7 @@ class LotofacilGenerator:
 
     def balancear_quadrantes(self, dezenas):
         dezenas = set(dezenas)
+        # Lógica de balanceamento
         for i, q in enumerate(self.quadrantes):
             no_quadrante = len(dezenas & set(q))
             alvo = self.estatisticas['freq_quadrantes'][i]
@@ -93,7 +101,6 @@ class LotofacilGenerator:
                 remover = min(no_quadrante - alvo, len(opcoes))
                 if remover > 0:
                     dezenas -= set(random.sample(opcoes, remover))
-                    
         return dezenas
 
     def otimizar_diversidade(self, dezenas):
@@ -129,7 +136,7 @@ class LotofacilGenerator:
         while abs(soma_atual - self.estatisticas['soma_ideal']) > 15 and tentativas < 10:
             if soma_atual > self.estatisticas['soma_ideal']:
                 altos = sorted(dezenas, reverse=True)[:5]
-                baixos_disponiveis = sorted(set(self.todas_dezenas) - dezenas)
+                baixos_disponiveis = sorted(list(set(self.todas_dezenas) - dezenas))
                 if altos and baixos_disponiveis:
                     alto_escolhido = random.choice(altos)
                     baixo_escolhido = random.choice(baixos_disponiveis)
@@ -137,7 +144,7 @@ class LotofacilGenerator:
                     dezenas.add(baixo_escolhido)
             else:
                 baixos = sorted(dezenas)[:5]
-                altos_disponiveis = sorted(set(self.todas_dezenas) - dezenas, reverse=True)
+                altos_disponiveis = sorted(list(set(self.todas_dezenas) - dezenas), reverse=True)
                 if baixos and altos_disponiveis:
                     baixo_escolhido = random.choice(baixos)
                     alto_escolhido = random.choice(altos_disponiveis)
@@ -154,6 +161,10 @@ class LotofacilGenerator:
         jogos = []
         
         # Algoritmo de fechamento real com combinações únicas
+        if len(dezenas_selecionadas) < 15:
+            st.error(f"Erro: Não foi possível selecionar 15 dezenas. Apenas {len(dezenas_selecionadas)} foram geradas.")
+            return []
+
         todas_combinacoes = list(combinations(dezenas_selecionadas, 15))
         random.shuffle(todas_combinacoes)
         
@@ -226,34 +237,38 @@ if submit_button:
             st.error("Erro: Existem números em comum entre os sorteados e os ausentes!")
         else:
             gerador = LotofacilGenerator(ultimo_sorteio, dezenas_ausentes)
+            
             with st.spinner('Gerando jogos otimizados...'):
+                dezenas_selecionadas = gerador.selecionar_dezenas_estrategicas()
+                st.info(f"✅ Fechamento com **{len(dezenas_selecionadas)}** dezenas gerado com sucesso!")
                 jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
             
-            st.success(f"✅ {len(jogos_gerados)} jogos gerados com sucesso!")
-            st.subheader("🎲 Jogos Recomendados")
-            
-            # Exibição horizontal com formatação profissional
-            colunas_por_linha = 5
-            total_jogos = len(jogos_gerados)
-            num_linhas = (total_jogos + colunas_por_linha - 1) // colunas_por_linha
-            
-            for i in range(num_linhas):
-                cols = st.columns(colunas_por_linha)
-                for j in range(colunas_por_linha):
-                    idx = i * colunas_por_linha + j
-                    if idx < total_jogos:
-                        jogo = jogos_gerados[idx]
-                        numeros_formatados = [f"{n:02}" for n in jogo]
-                        cols[j].markdown(f"**Jogo {idx+1}:**<br>{' - '.join(numeros_formatados)}", unsafe_allow_html=True)
+            if jogos_gerados:
+                st.success(f"✅ {len(jogos_gerados)} jogos gerados com sucesso!")
+                st.subheader("🎲 Jogos Recomendados")
+                
+                # Exibição horizontal com formatação profissional
+                colunas_por_linha = 5
+                total_jogos = len(jogos_gerados)
+                num_linhas = (total_jogos + colunas_por_linha - 1) // colunas_por_linha
+                
+                for i in range(num_linhas):
+                    cols = st.columns(colunas_por_linha)
+                    for j in range(colunas_por_linha):
+                        idx = i * colunas_por_linha + j
+                        if idx < total_jogos:
+                            jogo = jogos_gerados[idx]
+                            numeros_formatados = [f"{n:02}" for n in jogo]
+                            cols[j].markdown(f"**Jogo {idx+1}:**<br>{' - '.join(numeros_formatados)}", unsafe_allow_html=True)
 
-            # Download
-            csv = "\n".join([";".join(map(str, j)) for j in jogos_gerados])
-            st.download_button(
-                label="📥 Baixar Jogos (CSV)",
-                data=csv,
-                file_name="jogos_lotofacil.csv",
-                mime="text/csv"
-            )
+                # Download
+                csv = "\n".join([";".join(map(str, j)) for j in jogos_gerados])
+                st.download_button(
+                    label="📥 Baixar Jogos (CSV)",
+                    data=csv,
+                    file_name="jogos_lotofacil.csv",
+                    mime="text/csv"
+                )
             
     except Exception as e:
         st.error(f"Erro: Verifique o formato dos números. Detalhes: {e}")
