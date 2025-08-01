@@ -66,7 +66,7 @@ class LotofacilGenerator:
         if len(selecionadas) < 18:
             disponiveis = list(set(self.todas_dezenas) - selecionadas)
             adicionar = 18 - len(selecionadas)
-            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis)))
+            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis))))
         
         # 4. Balanceamento
         selecionadas = self.balancear_quadrantes(selecionadas)
@@ -131,14 +131,18 @@ class LotofacilGenerator:
                 altos = sorted(dezenas, reverse=True)[:5]
                 baixos_disponiveis = sorted(set(self.todas_dezenas) - dezenas)
                 if altos and baixos_disponiveis:
-                    dezenas.remove(altos[0])
-                    dezenas.add(baixos_disponiveis[0])
+                    alto_escolhido = random.choice(altos)
+                    baixo_escolhido = random.choice(baixos_disponiveis)
+                    dezenas.remove(alto_escolhido)
+                    dezenas.add(baixo_escolhido)
             else:
                 baixos = sorted(dezenas)[:5]
                 altos_disponiveis = sorted(set(self.todas_dezenas) - dezenas, reverse=True)
                 if baixos and altos_disponiveis:
-                    dezenas.remove(baixos[0])
-                    dezenas.add(altos_disponiveis[0])
+                    baixo_escolhido = random.choice(baixos)
+                    alto_escolhido = random.choice(altos_disponiveis)
+                    dezenas.remove(baixo_escolhido)
+                    dezenas.add(alto_escolhido)
             
             soma_atual = sum(dezenas)
             tentativas += 1
