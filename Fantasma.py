@@ -10,6 +10,10 @@ class LotofacilGenerator:
         self.ultimo_sorteio = sorted(ultimo_sorteio)
         self.dezenas_fora = sorted(dezenas_fora)
         self.todas_dezenas = list(range(1, 26))
+        
+        # Dezenas disponíveis para o fechamento
+        self.dezenas_disponiveis = sorted(list(set(self.todas_dezenas) - set(dezenas_fora)))
+
         self.quadrantes = [
             [1, 2, 3, 4, 5],
             [6, 7, 8, 9, 10],
@@ -52,36 +56,43 @@ class LotofacilGenerator:
     def selecionar_dezenas_estrategicas(self):
         selecionadas = set()
         
-        # 1. Adicionar números quentes (repetidos)
+        # 1. Seleciona as dezenas quentes (do último sorteio)
         repetir = min(self.estatisticas['repeticao_esperada'], len(self.ultimo_sorteio))
-        if repetir > 0:
-            selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
+        selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
         
-        # 2. Adicionar números frios (dezenas_fora)
-        disponiveis_frios = list(set(self.dezenas_fora) - selecionadas)
-        adicionar_frios = min(18 - len(selecionadas), len(disponiveis_frios))
-        if adicionar_frios > 0:
-            selecionadas.update(random.sample(disponiveis_frios, adicionar_frios))
+        # 2. Seleciona as dezenas frias (as que não saíram) para completar o fechamento
+        # A nova lógica garante que o fechamento tenha 18 dezenas
         
-        # 3. Completar com números quentes restantes se necessário
-        if len(selecionadas) < 18:
-            disponiveis_quentes = list(set(self.ultimo_sorteio) - selecionadas)
-            adicionar_quentes = min(18 - len(selecionadas), len(disponiveis_quentes))
-            if adicionar_quentes > 0:
-                 selecionadas.update(random.sample(disponiveis_quentes, adicionar_quentes))
+        # Cria uma lista de dezenas disponíveis para o fechamento, que não foram o último sorteio
+        dezenas_frias_disponiveis = sorted(list(set(self.dezenas_fora) - selecionadas))
+        
+        # Quantas dezenas precisamos para completar as 18
+        quant_faltando = 18 - len(selecionadas)
+        
+        if quant_faltando > 0:
+            # Completa com dezenas frias, se possível
+            quant_a_tirar_das_frias = min(quant_faltando, len(dezenas_frias_disponiveis))
+            selecionadas.update(random.sample(dezenas_frias_disponiveis, quant_a_tirar_das_frias))
+            quant_faltando -= quant_a_tirar_das_frias
 
-        # 4. Completar com números aleatórios se necessário para garantir 18 dezenas
-        if len(selecionadas) < 18:
-            disponiveis_gerais = list(set(self.todas_dezenas) - selecionadas)
-            adicionar_aleatorios = 18 - len(selecionadas)
-            if adicionar_aleatorios > 0:
-                selecionadas.update(random.sample(disponiveis_gerais, adicionar_aleatorios))
+        if quant_faltando > 0:
+            # Se ainda faltarem dezenas, completa com o restante que sobrou
+            dezenas_restantes = list(set(self.todas_dezenas) - selecionadas - set(self.dezenas_fora))
+            quant_a_tirar_das_restantes = min(quant_faltando, len(dezenas_restantes))
+            if quant_a_tirar_das_restantes > 0:
+                selecionadas.update(random.sample(dezenas_restantes, quant_a_tirar_das_restantes))
         
-        # 5. Balanceamento e Otimização
-        selecionadas = self.balancear_quadrantes(selecionadas)
-        selecionadas = self.otimizar_diversidade(selecionadas)
+        # Se por algum motivo a lista não tiver 18, é porque as listas de dezenas de entrada 
+        # estavam incorretas. Mas agora temos uma mensagem de erro robusta para isso.
+
+        # 3. Balanceamento e Otimização
+        # Isso só deve ser feito após a lista ter 18 dezenas
+        if len(selecionadas) == 18:
+            selecionadas = self.balancear_quadrantes(selecionadas)
+            selecionadas = self.otimizar_diversidade(selecionadas)
         
-        return sorted(selecionadas)
+        return sorted(list(selecionadas))
+
 
     def balancear_quadrantes(self, dezenas):
         dezenas = set(dezenas)
@@ -135,7 +146,7 @@ class LotofacilGenerator:
         tentativas = 0
         while abs(soma_atual - self.estatisticas['soma_ideal']) > 15 and tentativas < 10:
             if soma_atual > self.estatisticas['soma_ideal']:
-                altos = sorted(dezenas, reverse=True)[:5]
+                altos = sorted(list(dezenas), reverse=True)[:5]
                 baixos_disponiveis = sorted(list(set(self.todas_dezenas) - dezenas))
                 if altos and baixos_disponiveis:
                     alto_escolhido = random.choice(altos)
@@ -143,7 +154,7 @@ class LotofacilGenerator:
                     dezenas.remove(alto_escolhido)
                     dezenas.add(baixo_escolhido)
             else:
-                baixos = sorted(dezenas)[:5]
+                baixos = sorted(list(dezenas))[:5]
                 altos_disponiveis = sorted(list(set(self.todas_dezenas) - dezenas), reverse=True)
                 if baixos and altos_disponiveis:
                     baixo_escolhido = random.choice(baixos)
@@ -156,20 +167,20 @@ class LotofacilGenerator:
             
         return dezenas
 
-    def gerar_jogos_otimizados(self, quantidade=15):
-        dezenas_selecionadas = self.selecionar_dezenas_estrategicas()
-        jogos = []
-        
-        # Algoritmo de fechamento real com combinações únicas
-        if len(dezenas_selecionadas) < 15:
-            st.error(f"Erro: Não foi possível selecionar 15 dezenas. Apenas {len(dezenas_selecionadas)} foram geradas.")
+    def gerar_jogos_otimizados(self, quantidade=15, dezenas_selecionadas=None):
+        if dezenas_selecionadas is None:
+            st.error("Erro interno: A lista de dezenas selecionadas não foi passada para a função.")
             return []
 
+        if len(dezenas_selecionadas) < 15:
+            st.warning(f"Aviso: Não foi possível selecionar 15 dezenas. Apenas {len(dezenas_selecionadas)} foram geradas. O máximo de jogos possíveis é 1.")
+            return [dezenas_selecionadas]
+        
         todas_combinacoes = list(combinations(dezenas_selecionadas, 15))
         random.shuffle(todas_combinacoes)
         
-        # Selecionar combinações únicas mantendo diversidade
         combinacoes_selecionadas = set()
+        jogos = []
         for combo in todas_combinacoes:
             if len(combinacoes_selecionadas) >= quantidade:
                 break
@@ -193,13 +204,13 @@ st.markdown("""
 Insira os números do **último sorteio** e as **dezenas ausentes** para gerar jogos otimizados!
 """)
 
-def validar_entradas(numeros, contagem_esperada):
+def validar_entradas(numeros, contagem_esperada, nome_campo):
     if len(numeros) != contagem_esperada:
-        return False, f"Erro: Insira exatamente {contagem_esperada} números!"
+        return False, f"Erro: Insira exatamente {contagem_esperada} números para {nome_campo}!"
     if any(n < 1 or n > 25 for n in numeros):
-        return False, "Erro: Todos os números devem estar entre 1 e 25!"
+        return False, f"Erro: Todos os números de {nome_campo} devem estar entre 1 e 25!"
     if len(set(numeros)) != contagem_esperada:
-        return False, "Erro: Números duplicados foram encontrados!"
+        return False, f"Erro: Números duplicados foram encontrados em {nome_campo}!"
     return True, ""
 
 with st.form("entrada_dados"):
@@ -226,8 +237,8 @@ if submit_button:
         ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio_str.split(",") if x.strip()]
         dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes_str.split(",") if x.strip()]
         
-        validacao_sorteio, msg_sorteio = validar_entradas(ultimo_sorteio, 15)
-        validacao_ausentes, msg_ausentes = validar_entradas(dezenas_ausentes, 10)
+        validacao_sorteio, msg_sorteio = validar_entradas(ultimo_sorteio, 15, "Sorteados")
+        validacao_ausentes, msg_ausentes = validar_entradas(dezenas_ausentes, 10, "Ausentes")
         
         if not validacao_sorteio:
             st.error(msg_sorteio)
@@ -240,14 +251,16 @@ if submit_button:
             
             with st.spinner('Gerando jogos otimizados...'):
                 dezenas_selecionadas = gerador.selecionar_dezenas_estrategicas()
+                
+                # Mensagem de depuração
                 st.info(f"✅ Fechamento com **{len(dezenas_selecionadas)}** dezenas gerado com sucesso!")
-                jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
+                
+                jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos, dezenas_selecionadas)
             
             if jogos_gerados:
                 st.success(f"✅ {len(jogos_gerados)} jogos gerados com sucesso!")
                 st.subheader("🎲 Jogos Recomendados")
                 
-                # Exibição horizontal com formatação profissional
                 colunas_por_linha = 5
                 total_jogos = len(jogos_gerados)
                 num_linhas = (total_jogos + colunas_por_linha - 1) // colunas_por_linha
@@ -261,7 +274,6 @@ if submit_button:
                             numeros_formatados = [f"{n:02}" for n in jogo]
                             cols[j].markdown(f"**Jogo {idx+1}:**<br>{' - '.join(numeros_formatados)}", unsafe_allow_html=True)
 
-                # Download
                 csv = "\n".join([";".join(map(str, j)) for j in jogos_gerados])
                 st.download_button(
                     label="📥 Baixar Jogos (CSV)",
@@ -289,4 +301,3 @@ st.sidebar.markdown("""
 ### ⚠️ Aviso Legal
 Este app é para entretenimento e não garante ganhos. Jogue com responsabilidade.
 """)
-
