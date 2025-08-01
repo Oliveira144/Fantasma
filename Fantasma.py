@@ -2,8 +2,9 @@ import streamlit as st
 import random
 import numpy as np
 from collections import Counter
+from itertools import combinations
 
-# Classe Corrigida com Gerenciamento de Amostras
+# Classe Corrigida com Geração de Fechamento Real
 class LotofacilGenerator:
     def __init__(self, ultimo_sorteio, dezenas_fora):
         self.ultimo_sorteio = sorted(ultimo_sorteio)
@@ -66,7 +67,7 @@ class LotofacilGenerator:
         if len(selecionadas) < 18:
             disponiveis = list(set(self.todas_dezenas) - selecionadas)
             adicionar = 18 - len(selecionadas)
-            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis))))
+            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis)))
         
         # 4. Balanceamento
         selecionadas = self.balancear_quadrantes(selecionadas)
@@ -153,36 +154,23 @@ class LotofacilGenerator:
         dezenas_selecionadas = self.selecionar_dezenas_estrategicas()
         jogos = []
         
-        # Matriz de fechamento otimizada
-        matriz = [
-            [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
-            [1,2,3,4,5,6,7,8,16,17,18,9,10,11,12],
-            [1,2,3,4,5,9,10,11,13,14,15,16,17,18,6],
-            [1,2,3,6,7,8,9,10,11,12,13,14,15,16,17],
-            [1,2,3,6,7,8,9,12,13,14,15,16,17,18,4],
-            [1,2,4,5,6,7,8,9,10,11,12,13,14,15,18],
-            [1,4,5,6,7,8,10,11,12,13,14,15,16,17,18],
-            [2,3,4,5,6,7,8,9,10,11,12,16,17,18,13],
-            [2,3,4,5,9,10,11,12,13,14,15,16,17,18,1],
-            [2,3,5,7,8,9,10,11,12,13,14,15,16,17,18],
-            [3,4,5,6,7,8,9,10,11,12,13,14,15,17,18],
-            [1,2,3,4,5,7,8,11,12,13,14,15,16,17,18],
-            [1,2,3,4,6,9,10,11,12,13,14,15,16,17,18],
-            [1,2,3,5,6,8,10,11,12,13,14,15,16,17,18],
-            [1,2,4,5,6,7,9,10,11,12,13,14,15,16,17]
-        ]
+        # Algoritmo de fechamento real com combinações únicas
+        todas_combinacoes = list(combinations(dezenas_selecionadas, 15))
+        random.shuffle(todas_combinacoes)
         
-        # Gerar jogos adaptando à seleção
-        for combinacao in matriz[:quantidade]:
-            try:
-                jogo = [dezenas_selecionadas[i-1] for i in combinacao]
-                jogos.append(sorted(jogo))
-            except IndexError:
-                # Fallback: geração aleatória se houver problema
-                jogo = random.sample(dezenas_selecionadas, 15)
-                jogos.append(sorted(jogo))
+        # Selecionar combinações únicas mantendo diversidade
+        combinacoes_selecionadas = set()
+        for combo in todas_combinacoes:
+            if len(combinacoes_selecionadas) >= quantidade:
+                break
                 
-        return jogos
+            # Verificar diversidade
+            combo_set = frozenset(combo)
+            if combo_set not in combinacoes_selecionadas:
+                combinacoes_selecionadas.add(combo_set)
+                jogos.append(sorted(combo))
+                
+        return jogos[:quantidade]
 
 # Interface Streamlit
 st.set_page_config(
@@ -224,17 +212,17 @@ if submit_button:
             st.error("Erro: Insira exatamente 15 números sorteados e 10 dezenas ausentes!")
         else:
             gerador = LotofacilGenerator(ultimo_sorteio, dezenas_ausentes)
-            jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
+            with st.spinner('Gerando jogos otimizados...'):
+                jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
             
             st.success(f"✅ {len(jogos_gerados)} jogos gerados com sucesso!")
             st.subheader("🎲 Jogos Recomendados")
             
-            # Exibir em colunas
-            cols = st.columns(3)
-            for i, jogo in enumerate(jogos_gerados):
-                with cols[i % 3]:
-                    st.markdown(f"**Jogo {i+1}**")
-                    st.write(jogo)
+            # Exibição horizontal com formatação profissional
+            for i, jogo in enumerate(jogos_gerados, 1):
+                # Formatar números com 2 dígitos
+                numeros_formatados = [f"{n:02}" for n in jogo]
+                st.markdown(f"**Jogo {i}:** {' - '.join(numeros_formatados)}")
             
             # Download
             csv = "\n".join([";".join(map(str, j)) for j in jogos_gerados])
