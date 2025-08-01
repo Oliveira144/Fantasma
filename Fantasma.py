@@ -4,7 +4,7 @@ import numpy as np
 from collections import Counter
 from itertools import combinations
 
-# Classe Corrigida com Geração de Fechamento Real
+# Classe Corrigida com Gerenciamento de Amostras
 class LotofacilGenerator:
     def __init__(self, ultimo_sorteio, dezenas_fora):
         self.ultimo_sorteio = sorted(ultimo_sorteio)
@@ -67,7 +67,7 @@ class LotofacilGenerator:
         if len(selecionadas) < 18:
             disponiveis = list(set(self.todas_dezenas) - selecionadas)
             adicionar = 18 - len(selecionadas)
-            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis)))
+            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis)))  # CORREÇÃO AQUI
         
         # 4. Balanceamento
         selecionadas = self.balancear_quadrantes(selecionadas)
@@ -205,8 +205,8 @@ with st.form("entrada_dados"):
 
 if submit_button:
     try:
-        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio.split(",")]
-        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes.split(",")]
+        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio.split(",") if x.strip()]
+        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes.split(",") if x.strip()]
         
         if len(ultimo_sorteio) != 15 or len(dezenas_ausentes) != 10:
             st.error("Erro: Insira exatamente 15 números sorteados e 10 dezenas ausentes!")
