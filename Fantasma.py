@@ -67,7 +67,7 @@ class LotofacilGenerator:
         if len(selecionadas) < 18:
             disponiveis = list(set(self.todas_dezenas) - selecionadas)
             adicionar = 18 - len(selecionadas)
-            amostra = random.sample(disponiveis, min(adicionar, len(disponiveis))
+            amostra = random.sample(disponiveis, min(adicionar, len(disponiveis)))
             selecionadas.update(amostra)
         
         # 4. Balanceamento
@@ -102,7 +102,6 @@ class LotofacilGenerator:
         impares = [d for d in dezenas if d % 2 == 1]
         diferenca = len(pares) - self.estatisticas['alvo_pares']
         
-        # Correção para evitar amostras maiores que a população
         if diferenca > 0:
             trocar = min(diferenca, len(pares))
             if trocar > 0:
@@ -125,7 +124,6 @@ class LotofacilGenerator:
                 if adicionar > 0:
                     dezenas |= set(random.sample(opcoes, adicionar))
         
-        # Ajuste de soma com proteção contra loops infinitos
         soma_atual = sum(dezenas)
         tentativas = 0
         while abs(soma_atual - self.estatisticas['soma_ideal']) > 15 and tentativas < 10:
@@ -165,7 +163,6 @@ class LotofacilGenerator:
             if len(combinacoes_selecionadas) >= quantidade:
                 break
                 
-            # Verificar diversidade
             combo_set = frozenset(combo)
             if combo_set not in combinacoes_selecionadas:
                 combinacoes_selecionadas.add(combo_set)
@@ -185,18 +182,27 @@ st.markdown("""
 Insira os números do **último sorteio** e as **dezenas ausentes** para gerar jogos otimizados!
 """)
 
+def validar_entradas(numeros, contagem_esperada):
+    if len(numeros) != contagem_esperada:
+        return False, f"Erro: Insira exatamente {contagem_esperada} números!"
+    if any(n < 1 or n > 25 for n in numeros):
+        return False, "Erro: Todos os números devem estar entre 1 e 25!"
+    if len(set(numeros)) != contagem_esperada:
+        return False, "Erro: Números duplicados foram encontrados!"
+    return True, ""
+
 with st.form("entrada_dados"):
     st.subheader("📊 Dados do Último Sorteio")
     col1, col2 = st.columns(2)
     
     with col1:
-        ultimo_sorteio = st.text_input(
+        ultimo_sorteio_str = st.text_input(
             "Números Sorteados (15 números, separados por vírgula):",
             "1,2,5,6,9,10,11,12,13,14,18,20,22,23,25"
         )
     
     with col2:
-        dezenas_ausentes = st.text_input(
+        dezenas_ausentes_str = st.text_input(
             "Dezenas Ausentes (10 números, separados por vírgula):",
             "3,4,7,8,15,16,17,19,21,24"
         )
@@ -206,11 +212,18 @@ with st.form("entrada_dados"):
 
 if submit_button:
     try:
-        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio.split(",") if x.strip()]
-        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes.split(",") if x.strip()]
+        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio_str.split(",") if x.strip()]
+        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes_str.split(",") if x.strip()]
         
-        if len(ultimo_sorteio) != 15 or len(dezenas_ausentes) != 10:
-            st.error("Erro: Insira exatamente 15 números sorteados e 10 dezenas ausentes!")
+        validacao_sorteio, msg_sorteio = validar_entradas(ultimo_sorteio, 15)
+        validacao_ausentes, msg_ausentes = validar_entradas(dezenas_ausentes, 10)
+        
+        if not validacao_sorteio:
+            st.error(msg_sorteio)
+        elif not validacao_ausentes:
+            st.error(msg_ausentes)
+        elif set(ultimo_sorteio) & set(dezenas_ausentes):
+            st.error("Erro: Existem números em comum entre os sorteados e os ausentes!")
         else:
             gerador = LotofacilGenerator(ultimo_sorteio, dezenas_ausentes)
             with st.spinner('Gerando jogos otimizados...'):
@@ -220,11 +233,19 @@ if submit_button:
             st.subheader("🎲 Jogos Recomendados")
             
             # Exibição horizontal com formatação profissional
-            for i, jogo in enumerate(jogos_gerados, 1):
-                # Formatar números com 2 dígitos
-                numeros_formatados = [f"{n:02}" for n in jogo]
-                st.markdown(f"**Jogo {i}:** {' - '.join(numeros_formatados)}")
+            colunas_por_linha = 5
+            total_jogos = len(jogos_gerados)
+            num_linhas = (total_jogos + colunas_por_linha - 1) // colunas_por_linha
             
+            for i in range(num_linhas):
+                cols = st.columns(colunas_por_linha)
+                for j in range(colunas_por_linha):
+                    idx = i * colunas_por_linha + j
+                    if idx < total_jogos:
+                        jogo = jogos_gerados[idx]
+                        numeros_formatados = [f"{n:02}" for n in jogo]
+                        cols[j].markdown(f"**Jogo {idx+1}:**<br>{' - '.join(numeros_formatados)}", unsafe_allow_html=True)
+
             # Download
             csv = "\n".join([";".join(map(str, j)) for j in jogos_gerados])
             st.download_button(
@@ -235,10 +256,11 @@ if submit_button:
             )
             
     except Exception as e:
-        st.error(f"Erro: {str(e)}")
+        st.error(f"Erro: Verifique o formato dos números. Detalhes: {e}")
 
 # Informações
 st.sidebar.markdown("""
+---
 ### 🔍 Como Funciona
 1. Insira os 15 números do último sorteio
 2. Insira as 10 dezenas que ficaram de fora
@@ -252,3 +274,4 @@ st.sidebar.markdown("""
 ### ⚠️ Aviso Legal
 Este app é para entretenimento e não garante ganhos. Jogue com responsabilidade.
 """)
+
