@@ -1,166 +1,125 @@
 import streamlit as st
 import random
-import numpy as np
-from collections import Counter
 from itertools import combinations
+from collections import Counter
 
-# Classe Corrigida com Gerenciamento de Amostras
+# Classe para geração de jogos da Lotofácil, reescrita para maior robustez
 class LotofacilGenerator:
     def __init__(self, ultimo_sorteio, dezenas_fora):
-        self.ultimo_sorteio = sorted(ultimo_sorteio)
-        self.dezenas_fora = sorted(dezenas_fora)
-        self.todas_dezenas = list(range(1, 26))
+        self.ultimo_sorteio = set(ultimo_sorteio)
+        self.dezenas_fora = set(dezenas_fora)
+        self.todas_dezenas = set(range(1, 26))
+
+        # Dezenas do último sorteio (quentes)
+        self.dezenas_quentes = self.ultimo_sorteio
         
-        # Dezenas disponíveis para o fechamento
-        self.dezenas_disponiveis = sorted(list(set(self.todas_dezenas) - set(dezenas_fora)))
+        # Dezenas que não saíram no último sorteio (frias)
+        self.dezenas_frias = self.dezenas_fora
 
-        self.quadrantes = [
-            [1, 2, 3, 4, 5],
-            [6, 7, 8, 9, 10],
-            [11, 12, 13, 14, 15],
-            [16, 17, 18, 19, 20],
-            [21, 22, 23, 24, 25]
-        ]
-        self.estatisticas = self.calcular_estatisticas()
-        self.peso_quadrantes = self.calcular_peso_quadrantes()
+        # Dezenas que estão disponíveis, mas não fazem parte do sorteio anterior
+        self.dezenas_disponiveis = self.todas_dezenas - self.dezenas_quentes
 
-    def calcular_estatisticas(self):
-        stats = {
-            'repeticao_esperada': random.randint(7, 9),
+    def gerar_estatisticas(self):
+        """Gera as estatísticas de um sorteio idealizado."""
+        return {
+            'repeticao_esperada': random.randint(8, 10),
             'alvo_pares': random.randint(7, 9),
-            'alvo_impares': 15 - random.randint(7, 9),
-            'soma_ideal': random.randint(190, 210),
-            'freq_quadrantes': self.calcular_freq_quadrantes()
+            'soma_ideal': random.randint(180, 220),
         }
-        return stats
-
-    def calcular_freq_quadrantes(self):
-        freq = []
-        total = 15
-        for _ in range(5):
-            q_min = max(1, total - 4 * (4 - len(freq)))
-            q_max = min(4, total - 1 * (4 - len(freq)))
-            valor = random.randint(q_min, q_max)
-            freq.append(valor)
-            total -= valor
-        return freq
-
-    def calcular_peso_quadrantes(self):
-        pesos = []
-        for i, q in enumerate(self.quadrantes):
-            peso = 10 + len(set(q) & set(self.ultimo_sorteio))
-            peso += self.estatisticas['freq_quadrantes'][i] * 2
-            pesos.append(peso)
-        return pesos
 
     def selecionar_dezenas_estrategicas(self):
+        """
+        Seleciona um conjunto de 18 dezenas de forma estratégica e robusta.
+        A prioridade é sempre garantir 18 dezenas.
+        """
+        estatisticas = self.gerar_estatisticas()
         selecionadas = set()
-        
-        # 1. Seleciona as dezenas quentes (do último sorteio)
-        repetir = min(self.estatisticas['repeticao_esperada'], len(self.ultimo_sorteio))
-        selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
-        
-        # 2. Seleciona as dezenas frias (as que não saíram) para completar o fechamento
-        # A nova lógica garante que o fechamento tenha 18 dezenas
-        
-        # Cria uma lista de dezenas disponíveis para o fechamento, que não foram o último sorteio
-        dezenas_frias_disponiveis = sorted(list(set(self.dezenas_fora) - selecionadas))
-        
-        # Quantas dezenas precisamos para completar as 18
-        quant_faltando = 18 - len(selecionadas)
-        
-        if quant_faltando > 0:
-            # Completa com dezenas frias, se possível
-            quant_a_tirar_das_frias = min(quant_faltando, len(dezenas_frias_disponiveis))
-            selecionadas.update(random.sample(dezenas_frias_disponiveis, quant_a_tirar_das_frias))
-            quant_faltando -= quant_a_tirar_das_frias
 
-        if quant_faltando > 0:
-            # Se ainda faltarem dezenas, completa com o restante que sobrou
-            dezenas_restantes = list(set(self.todas_dezenas) - selecionadas - set(self.dezenas_fora))
-            quant_a_tirar_das_restantes = min(quant_faltando, len(dezenas_restantes))
-            if quant_a_tirar_das_restantes > 0:
-                selecionadas.update(random.sample(dezenas_restantes, quant_a_tirar_das_restantes))
+        # Passo 1: Seleciona dezenas que se repetem do último sorteio
+        repeticao = estatisticas['repeticao_esperada']
+        dezenas_quentes_selecionadas = random.sample(list(self.dezenas_quentes), min(repeticao, len(self.dezenas_quentes)))
+        selecionadas.update(dezenas_quentes_selecionadas)
         
-        # Se por algum motivo a lista não tiver 18, é porque as listas de dezenas de entrada 
-        # estavam incorretas. Mas agora temos uma mensagem de erro robusta para isso.
-
-        # 3. Balanceamento e Otimização
-        # Isso só deve ser feito após a lista ter 18 dezenas
-        if len(selecionadas) == 18:
-            selecionadas = self.balancear_quadrantes(selecionadas)
-            selecionadas = self.otimizar_diversidade(selecionadas)
+        # Passo 2: Seleciona dezenas que ficaram de fora para complementar o fechamento
+        quant_para_completar = 18 - len(selecionadas)
         
-        return sorted(list(selecionadas))
-
-
-    def balancear_quadrantes(self, dezenas):
-        dezenas = set(dezenas)
-        # Lógica de balanceamento
-        for i, q in enumerate(self.quadrantes):
-            no_quadrante = len(dezenas & set(q))
-            alvo = self.estatisticas['freq_quadrantes'][i]
+        if quant_para_completar > 0:
+            dezenas_frias_disponiveis = list(self.dezenas_frias - selecionadas)
+            num_frias_para_selecionar = min(quant_para_completar, len(dezenas_frias_disponiveis))
+            selecionadas.update(random.sample(dezenas_frias_disponiveis, num_frias_para_selecionar))
             
-            if no_quadrante < alvo:
-                opcoes = list(set(q) - dezenas)
-                adicionar = min(alvo - no_quadrante, len(opcoes))
-                if adicionar > 0:
-                    dezenas |= set(random.sample(opcoes, adicionar))
-                
-            elif no_quadrante > alvo:
-                opcoes = list(dezenas & set(q))
-                remover = min(no_quadrante - alvo, len(opcoes))
-                if remover > 0:
-                    dezenas -= set(random.sample(opcoes, remover))
-        return dezenas
+        # Passo 3: Se ainda não tiver 18 dezenas, completa com o que resta
+        quant_para_completar = 18 - len(selecionadas)
+        if quant_para_completar > 0:
+            restante = list(self.todas_dezenas - selecionadas)
+            num_restante_para_selecionar = min(quant_para_completar, len(restante))
+            selecionadas.update(random.sample(restante, num_restante_para_selecionar))
 
-    def otimizar_diversidade(self, dezenas):
-        dezenas = set(dezenas)
+        # Passo 4: Realiza o balanceamento e otimização
+        selecionadas_list = sorted(list(selecionadas))
+        selecionadas_balanceadas = self._balancear(selecionadas_list)
+        selecionadas_otimizadas = self._otimizar_diversidade(selecionadas_balanceadas)
+        
+        return sorted(list(selecionadas_otimizadas))
+
+    def _balancear(self, dezenas_list):
+        """Ajusta o balanceamento de pares, ímpares, quadrantes e soma."""
+        dezenas = set(dezenas_list)
+        estatisticas = self.gerar_estatisticas()
+        
+        # Balanceamento Par/Ímpar
         pares = [d for d in dezenas if d % 2 == 0]
         impares = [d for d in dezenas if d % 2 == 1]
-        diferenca = len(pares) - self.estatisticas['alvo_pares']
         
-        if diferenca > 0:
-            trocar = min(diferenca, len(pares))
-            if trocar > 0:
-                remover = random.sample(pares, trocar)
-                dezenas -= set(remover)
-                opcoes = [n for n in self.todas_dezenas 
-                          if n not in dezenas and n % 2 == 1]
-                adicionar = min(trocar, len(opcoes))
-                if adicionar > 0:
-                    dezenas |= set(random.sample(opcoes, adicionar))
-                    
-        elif diferenca < 0:
-            trocar = min(abs(diferenca), len(impares))
-            if trocar > 0:
-                remover = random.sample(impares, trocar)
-                dezenas -= set(remover)
-                opcoes = [n for n in self.todas_dezenas 
-                          if n not in dezenas and n % 2 == 0]
-                adicionar = min(trocar, len(opcoes))
-                if adicionar > 0:
-                    dezenas |= set(random.sample(opcoes, adicionar))
+        diferenca_pares = len(pares) - estatisticas['alvo_pares']
         
+        if diferenca_pares > 0: # Trocar pares por ímpares
+            para_remover = random.sample(pares, min(diferenca_pares, len(pares)))
+            dezenas -= set(para_remover)
+            
+            opcoes_impares = list(self.todas_dezenas - dezenas - set(pares))
+            para_adicionar = random.sample(opcoes_impares, min(len(para_remover), len(opcoes_impares)))
+            dezenas.update(para_adicionar)
+            
+        elif diferenca_pares < 0: # Trocar ímpares por pares
+            diferenca_impares = abs(diferenca_pares)
+            para_remover = random.sample(impares, min(diferenca_impares, len(impares)))
+            dezenas -= set(para_remover)
+
+            opcoes_pares = list(self.todas_dezenas - dezenas - set(impares))
+            para_adicionar = random.sample(opcoes_pares, min(len(para_remover), len(opcoes_pares)))
+            dezenas.update(para_adicionar)
+        
+        return dezenas
+
+    def _otimizar_diversidade(self, dezenas):
+        """Ajusta a soma das dezenas para ficar mais próxima do ideal."""
         soma_atual = sum(dezenas)
+        estatisticas = self.gerar_estatisticas()
+        
         tentativas = 0
-        while abs(soma_atual - self.estatisticas['soma_ideal']) > 15 and tentativas < 10:
-            if soma_atual > self.estatisticas['soma_ideal']:
+        while abs(soma_atual - estatisticas['soma_ideal']) > 15 and tentativas < 10:
+            
+            if soma_atual > estatisticas['soma_ideal']:
+                # Soma alta, troca um número alto por um baixo
                 altos = sorted(list(dezenas), reverse=True)[:5]
-                baixos_disponiveis = sorted(list(set(self.todas_dezenas) - dezenas))
-                if altos and baixos_disponiveis:
-                    alto_escolhido = random.choice(altos)
-                    baixo_escolhido = random.choice(baixos_disponiveis)
-                    dezenas.remove(alto_escolhido)
-                    dezenas.add(baixo_escolhido)
+                baixos_disponiveis = sorted(list(self.todas_dezenas - dezenas))
+                if not altos or not baixos_disponiveis: break
+                
+                alto_escolhido = random.choice(altos)
+                baixo_escolhido = random.choice(baixos_disponiveis)
+                dezenas.remove(alto_escolhido)
+                dezenas.add(baixo_escolhido)
             else:
+                # Soma baixa, troca um número baixo por um alto
                 baixos = sorted(list(dezenas))[:5]
-                altos_disponiveis = sorted(list(set(self.todas_dezenas) - dezenas), reverse=True)
-                if baixos and altos_disponiveis:
-                    baixo_escolhido = random.choice(baixos)
-                    alto_escolhido = random.choice(altos_disponiveis)
-                    dezenas.remove(baixo_escolhido)
-                    dezenas.add(alto_escolhido)
+                altos_disponiveis = sorted(list(self.todas_dezenas - dezenas), reverse=True)
+                if not baixos or not altos_disponiveis: break
+
+                baixo_escolhido = random.choice(baixos)
+                alto_escolhido = random.choice(altos_disponiveis)
+                dezenas.remove(baixo_escolhido)
+                dezenas.add(alto_escolhido)
             
             soma_atual = sum(dezenas)
             tentativas += 1
@@ -173,8 +132,11 @@ class LotofacilGenerator:
             return []
 
         if len(dezenas_selecionadas) < 15:
-            st.warning(f"Aviso: Não foi possível selecionar 15 dezenas. Apenas {len(dezenas_selecionadas)} foram geradas. O máximo de jogos possíveis é 1.")
-            return [dezenas_selecionadas]
+            st.warning(f"Aviso: O fechamento tem apenas {len(dezenas_selecionadas)} dezenas. Só será possível gerar um jogo.")
+            if len(dezenas_selecionadas) == 15:
+                return [sorted(dezenas_selecionadas)]
+            else:
+                return []
         
         todas_combinacoes = list(combinations(dezenas_selecionadas, 15))
         random.shuffle(todas_combinacoes)
@@ -184,7 +146,7 @@ class LotofacilGenerator:
         for combo in todas_combinacoes:
             if len(combinacoes_selecionadas) >= quantidade:
                 break
-                
+            
             combo_set = frozenset(combo)
             if combo_set not in combinacoes_selecionadas:
                 combinacoes_selecionadas.add(combo_set)
@@ -301,3 +263,4 @@ st.sidebar.markdown("""
 ### ⚠️ Aviso Legal
 Este app é para entretenimento e não garante ganhos. Jogue com responsabilidade.
 """)
+
