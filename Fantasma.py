@@ -67,7 +67,8 @@ class LotofacilGenerator:
         if len(selecionadas) < 18:
             disponiveis = list(set(self.todas_dezenas) - selecionadas)
             adicionar = 18 - len(selecionadas)
-            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis)))  # CORREÇÃO AQUI
+            amostra = random.sample(disponiveis, min(adicionar, len(disponiveis))
+            selecionadas.update(amostra)
         
         # 4. Balanceamento
         selecionadas = self.balancear_quadrantes(selecionadas)
