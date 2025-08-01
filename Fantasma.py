@@ -3,20 +3,7 @@ import random
 import numpy as np
 from collections import Counter
 
-# Configuração da página
-st.set_page_config(
-    page_title="Gerador Profissional de Jogos Lotofácil",
-    page_icon="🍀",
-    layout="wide"
-)
-
-# Título e descrição
-st.title("🍀 Gerador Profissional de Jogos Lotofácil")
-st.markdown("""
-Insira os números do **último sorteio** e as **dezenas ausentes** para gerar jogos otimizados usando técnicas profissionais!
-""")
-
-# Classe principal do gerador
+# Classe Corrigida com Gerenciamento de Amostras
 class LotofacilGenerator:
     def __init__(self, ultimo_sorteio, dezenas_fora):
         self.ultimo_sorteio = sorted(ultimo_sorteio)
@@ -33,7 +20,6 @@ class LotofacilGenerator:
         self.peso_quadrantes = self.calcular_peso_quadrantes()
 
     def calcular_estatisticas(self):
-        """Calcula estatísticas vitais para a geração de jogos"""
         stats = {
             'repeticao_esperada': random.randint(7, 9),
             'alvo_pares': random.randint(7, 9),
@@ -44,7 +30,6 @@ class LotofacilGenerator:
         return stats
 
     def calcular_freq_quadrantes(self):
-        """Calcula a distribuição ideal por quadrantes"""
         freq = []
         total = 15
         for _ in range(5):
@@ -56,7 +41,6 @@ class LotofacilGenerator:
         return freq
 
     def calcular_peso_quadrantes(self):
-        """Atribui pesos aos quadrantes baseado na frequência ideal"""
         pesos = []
         for i, q in enumerate(self.quadrantes):
             peso = 10 + len(set(q) & set(self.ultimo_sorteio))
@@ -65,83 +49,107 @@ class LotofacilGenerator:
         return pesos
 
     def selecionar_dezenas_estrategicas(self):
-        """Seleciona 18 dezenas usando estratégias profissionais"""
         selecionadas = set()
         
-        # Adicionar números quentes (do último sorteio)
-        repetir = min(self.estatisticas['repeticao_esperada'], 10)
-        selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
+        # 1. Adicionar números quentes com verificação de tamanho
+        repetir = min(self.estatisticas['repeticao_esperada'], len(self.ultimo_sorteio))
+        if repetir > 0:
+            selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
         
-        # Adicionar números frios (dezenas ausentes)
-        adicionar = 18 - len(selecionadas)
-        selecionadas.update(random.sample(self.dezenas_fora, adicionar))
+        # 2. Adicionar números frios com verificação de tamanho
+        disponiveis = list(set(self.dezenas_fora) - selecionadas)
+        adicionar = min(18 - len(selecionadas), len(disponiveis))
+        if adicionar > 0:
+            selecionadas.update(random.sample(disponiveis, adicionar))
         
-        # Balancear quadrantes
+        # 3. Completar com números aleatórios se necessário
+        if len(selecionadas) < 18:
+            disponiveis = list(set(self.todas_dezenas) - selecionadas)
+            adicionar = 18 - len(selecionadas)
+            selecionadas.update(random.sample(disponiveis, min(adicionar, len(disponiveis)))
+        
+        # 4. Balanceamento
         selecionadas = self.balancear_quadrantes(selecionadas)
-        
-        # Otimizar diversidade
         selecionadas = self.otimizar_diversidade(selecionadas)
         
         return sorted(selecionadas)
 
     def balancear_quadrantes(self, dezenas):
-        """Garante distribuição adequada por quadrantes"""
+        dezenas = set(dezenas)
         for i, q in enumerate(self.quadrantes):
-            no_quadrante = len(set(dezenas) & set(q))
+            no_quadrante = len(dezenas & set(q))
             alvo = self.estatisticas['freq_quadrantes'][i]
             
             if no_quadrante < alvo:
-                opcoes = list(set(q) - set(dezenas))
+                opcoes = list(set(q) - dezenas)
                 adicionar = min(alvo - no_quadrante, len(opcoes))
-                dezenas.update(random.sample(opcoes, adicionar))
+                if adicionar > 0:
+                    dezenas |= set(random.sample(opcoes, adicionar))
                 
             elif no_quadrante > alvo:
-                opcoes = list(set(dezenas) & set(q))
+                opcoes = list(dezenas & set(q))
                 remover = min(no_quadrante - alvo, len(opcoes))
-                for num in random.sample(opcoes, remover):
-                    dezenas.remove(num)
+                if remover > 0:
+                    dezenas -= set(random.sample(opcoes, remover))
                     
         return dezenas
 
     def otimizar_diversidade(self, dezenas):
-        """Otimiza par/ímpar e soma numérica"""
+        dezenas = set(dezenas)
         pares = [d for d in dezenas if d % 2 == 0]
         impares = [d for d in dezenas if d % 2 == 1]
         diferenca = len(pares) - self.estatisticas['alvo_pares']
         
+        # Correção para evitar amostras maiores que a população
         if diferenca > 0:
-            trocar = random.sample(pares, diferenca)
-            opcoes = list(set(self.todas_dezenas) - set(dezenas) - set(impares))
-            dezenas = dezenas - set(trocar)
-            dezenas.update(random.sample(opcoes, diferenca))
+            trocar = min(diferenca, len(pares))
+            if trocar > 0:
+                remover = random.sample(pares, trocar)
+                dezenas -= set(remover)
+                opcoes = [n for n in self.todas_dezenas 
+                          if n not in dezenas and n % 2 == 1]
+                adicionar = min(trocar, len(opcoes))
+                if adicionar > 0:
+                    dezenas |= set(random.sample(opcoes, adicionar))
+                    
         elif diferenca < 0:
-            trocar = random.sample(impares, abs(diferenca))
-            opcoes = list(set(self.todas_dezenas) - set(dezenas) - set(pares))
-            dezenas = dezenas - set(trocar)
-            dezenas.update(random.sample(opcoes, abs(diferenca)))
-            
+            trocar = min(abs(diferenca), len(impares))
+            if trocar > 0:
+                remover = random.sample(impares, trocar)
+                dezenas -= set(remover)
+                opcoes = [n for n in self.todas_dezenas 
+                          if n not in dezenas and n % 2 == 0]
+                adicionar = min(trocar, len(opcoes))
+                if adicionar > 0:
+                    dezenas |= set(random.sample(opcoes, adicionar))
+        
+        # Ajuste de soma com proteção contra loops infinitos
         soma_atual = sum(dezenas)
-        while abs(soma_atual - self.estatisticas['soma_ideal']) > 15:
+        tentativas = 0
+        while abs(soma_atual - self.estatisticas['soma_ideal']) > 15 and tentativas < 10:
             if soma_atual > self.estatisticas['soma_ideal']:
-                alto = max(dezenas)
-                baixo = min(set(self.todas_dezenas) - set(dezenas))
-                dezenas.remove(alto)
-                dezenas.add(baixo)
+                altos = sorted(dezenas, reverse=True)[:5]
+                baixos_disponiveis = sorted(set(self.todas_dezenas) - dezenas)
+                if altos and baixos_disponiveis:
+                    dezenas.remove(altos[0])
+                    dezenas.add(baixos_disponiveis[0])
             else:
-                baixo = min(dezenas)
-                alto = max(set(self.todas_dezenas) - set(dezenas))
-                dezenas.remove(baixo)
-                dezenas.add(alto)
+                baixos = sorted(dezenas)[:5]
+                altos_disponiveis = sorted(set(self.todas_dezenas) - dezenas, reverse=True)
+                if baixos and altos_disponiveis:
+                    dezenas.remove(baixos[0])
+                    dezenas.add(altos_disponiveis[0])
+            
             soma_atual = sum(dezenas)
+            tentativas += 1
             
         return dezenas
 
     def gerar_jogos_otimizados(self, quantidade=15):
-        """Gera jogos usando matriz de fechamento otimizada"""
         dezenas_selecionadas = self.selecionar_dezenas_estrategicas()
         jogos = []
         
-        # Matriz de fechamento para 18 números
+        # Matriz de fechamento otimizada
         matriz = [
             [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
             [1,2,3,4,5,6,7,8,16,17,18,9,10,11,12],
@@ -157,79 +165,78 @@ class LotofacilGenerator:
             [1,2,3,4,5,7,8,11,12,13,14,15,16,17,18],
             [1,2,3,4,6,9,10,11,12,13,14,15,16,17,18],
             [1,2,3,5,6,8,10,11,12,13,14,15,16,17,18],
-            [1,2,4,5,6,7,9,10,11,12,13,14,15,16,17],
-            [1,3,4,5,6,7,8,9,10,11,12,14,15,16,17],
-            [1,3,4,5,7,8,9,10,11,12,13,15,16,17,18],
-            [1,3,5,6,7,8,9,10,12,13,14,15,16,17,18],
-            [2,3,4,5,6,7,8,10,11,12,13,14,15,16,18],
-            [2,4,5,6,7,8,9,10,11,13,14,15,16,17,18]
+            [1,2,4,5,6,7,9,10,11,12,13,14,15,16,17]
         ]
         
-        # Gerar jogos usando a matriz
-        for combinacao in matriz:
-            jogo = [dezenas_selecionadas[i-1] for i in combinacao]
-            jogos.append(sorted(jogo))
-            
-            if len(jogos) >= quantidade:
-                break
+        # Gerar jogos adaptando à seleção
+        for combinacao in matriz[:quantidade]:
+            try:
+                jogo = [dezenas_selecionadas[i-1] for i in combinacao]
+                jogos.append(sorted(jogo))
+            except IndexError:
+                # Fallback: geração aleatória se houver problema
+                jogo = random.sample(dezenas_selecionadas, 15)
+                jogos.append(sorted(jogo))
                 
-        return jogos[:quantidade]
+        return jogos
 
-# Interface do Streamlit
+# Interface Streamlit
+st.set_page_config(
+    page_title="Gerador Profissional Lotofácil",
+    page_icon="🎰",
+    layout="wide"
+)
+
+st.title("🎰 Gerador Profissional de Jogos Lotofácil")
+st.markdown("""
+Insira os números do **último sorteio** e as **dezenas ausentes** para gerar jogos otimizados!
+""")
+
 with st.form("entrada_dados"):
     st.subheader("📊 Dados do Último Sorteio")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("**Números Sorteados** (15 números)")
         ultimo_sorteio = st.text_input(
-            "Insira os números sorteados, separados por vírgula:",
+            "Números Sorteados (15 números, separados por vírgula):",
             "1,2,5,6,9,10,11,12,13,14,18,20,22,23,25"
         )
     
     with col2:
-        st.write("**Dezenas Ausentes** (10 números)")
         dezenas_ausentes = st.text_input(
-            "Insira as dezenas ausentes, separadas por vírgula:",
+            "Dezenas Ausentes (10 números, separados por vírgula):",
             "3,4,7,8,15,16,17,19,21,24"
         )
     
-    quantidade_jogos = st.slider("Quantidade de Jogos a Gerar", 10, 20, 15)
-    
-    submit_button = st.form_submit_button("✨ Gerar Jogos Otimizados")
+    quantidade_jogos = st.slider("Número de Jogos", 10, 20, 15)
+    submit_button = st.form_submit_button("✨ Gerar Jogos")
 
-# Processamento
 if submit_button:
     try:
-        # Converter entradas em listas de inteiros
-        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio.split(",") if x.strip().isdigit()]
-        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes.split(",") if x.strip().isdigit()]
+        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio.split(",")]
+        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes.split(",")]
         
         if len(ultimo_sorteio) != 15 or len(dezenas_ausentes) != 10:
-            st.error("⚠️ Por favor, insira exatamente 15 números sorteados e 10 dezenas ausentes!")
+            st.error("Erro: Insira exatamente 15 números sorteados e 10 dezenas ausentes!")
         else:
-            # Inicializar gerador
             gerador = LotofacilGenerator(ultimo_sorteio, dezenas_ausentes)
+            jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
             
-            # Gerar jogos
-            with st.spinner('Gerando jogos otimizados...'):
-                jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
+            st.success(f"✅ {len(jogos_gerados)} jogos gerados com sucesso!")
+            st.subheader("🎲 Jogos Recomendados")
             
-            # Exibir resultados
-            st.success(f"✅ {quantidade_jogos} jogos gerados com sucesso!")
-            st.subheader("🎲 Seus Jogos Otimizados")
-            
-            # Exibir jogos em colunas
+            # Exibir em colunas
             cols = st.columns(3)
             for i, jogo in enumerate(jogos_gerados):
                 with cols[i % 3]:
                     st.markdown(f"**Jogo {i+1}**")
                     st.write(jogo)
             
-            # Botão para download
+            # Download
+            csv = "\n".join([";".join(map(str, j)) for j in jogos_gerados])
             st.download_button(
-                label="📥 Baixar Todos os Jogos (CSV)",
-                data="\n".join([";".join(map(str, jogo)) for jogo in jogos_gerados]),
+                label="📥 Baixar Jogos (CSV)",
+                data=csv,
                 file_name="jogos_lotofacil.csv",
                 mime="text/csv"
             )
@@ -237,24 +244,18 @@ if submit_button:
     except Exception as e:
         st.error(f"Erro: {str(e)}")
 
-# Informações adicionais
+# Informações
 st.sidebar.markdown("""
-### ℹ️ Sobre o Gerador
-Este sistema utiliza técnicas profissionais de apostas:
-- **Análise de padrões** de repetição
-- **Otimização matemática** de quadrantes
-- **Balanceamento** par/ímpar
-- **Fechamento estratégico** com garantia de cobertura
-
-### 📌 Dicas Importantes
-1. Verifique sempre os números inseridos
-2. Combine com seus palpites pessoais
-3. Jogue com responsabilidade
+### 🔍 Como Funciona
+1. Insira os 15 números do último sorteio
+2. Insira as 10 dezenas que ficaram de fora
+3. O sistema aplica estratégias profissionais:
+   - Análise de repetição (7-9 números)
+   - Balanceamento de quadrantes
+   - Otimização par/ímpar
+   - Controle de soma numérica
+4. Gera 10-20 jogos otimizados
 
 ### ⚠️ Aviso Legal
-Este app é apenas para entretenimento e não garante ganhos. As loterias são jogos de azar.
+Este app é para entretenimento e não garante ganhos. Jogue com responsabilidade.
 """)
-
-# Rodapé
-st.markdown("---")
-st.caption("Gerador Profissional de Jogos Lotofácil • Desenvolvido com Streamlit")
