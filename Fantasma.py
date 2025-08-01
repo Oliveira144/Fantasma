@@ -1,213 +1,260 @@
 import streamlit as st
+import random
 import numpy as np
-from collections import deque, Counter
+from collections import Counter
 
-class BacBoPredictor:
-    def __init__(self):
-        self.reset()
-        
-    def reset(self):
-        self.game_history = []
-        self.point_history = []
-        self.streaks = {'Player': 0, 'Banker': 0, 'Tie': 0}
-        self.win_stats = {'Player': 0, 'Banker': 0, 'Tie': 0}
-    
-    def add_result(self, result: str, points: int):
-        result = result.upper()
-        self.game_history.append(result)
-        self.point_history.append(points)
-        self.win_stats[result] += 1
-        self._update_streaks(result)
-    
-    def _update_streaks(self, result):
-        for key in self.streaks:
-            self.streaks[key] = self.streaks[key] + 1 if key == result else 0
+# Configuração da página
+st.set_page_config(
+    page_title="Gerador Profissional de Jogos Lotofácil",
+    page_icon="🍀",
+    layout="wide"
+)
 
-    def analyze(self):
-        return {
-            'current_streak': self._get_current_streak(),
-            'hot_zones': self._get_hot_zones(),
-            'tie_risk': self._check_tie_risk(),
-            'swing': self._calculate_swing()
-        }
-    
-    def _get_current_streak(self):
-        return max(self.streaks.values())
-    
-    def _get_hot_zones(self):
-        if len(self.point_history) < 5: return []
-        recent = self.point_history[-10:] if len(self.point_history) >= 10 else self.point_history
-        freq = Counter(recent)
-        return [k for k, v in freq.items() if v >= max(freq.values())*0.7]
-    
-    def _check_tie_risk(self):
-        if len(self.point_history) < 3: return False
-        return 8 <= np.mean(self.point_history[-3:]) <= 9
-    
-    def _calculate_swing(self):
-        if len(self.point_history) < 2: return 0
-        return abs(self.point_history[-1] - self.point_history[-2])
-
-# Configuração do App
-st.set_page_config(layout="wide", page_title="Bac Bo PRO", page_icon="🎲")
-
-# CSS Customizado
+# Título e descrição
+st.title("🍀 Gerador Profissional de Jogos Lotofácil")
 st.markdown("""
-<style>
-/* Botões Principais */
-.big-btn {
-    height: 100px !important;
-    font-size: 24px !important;
-    margin: 5px 0 !important;
-    border-radius: 10px !important;
-    transition: all 0.2s !important;
-}
-.big-btn:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-.player-btn { background-color: #3b82f6 !important; }
-.banker-btn { background-color: #ef4444 !important; }
-.tie-btn { background-color: #a855f7 !important; }
+Insira os números do **último sorteio** e as **dezenas ausentes** para gerar jogos otimizados usando técnicas profissionais!
+""")
 
-/* Histórico Visual */
-.history-container {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin: 15px 0;
-}
-.history-item {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 16px;
-    position: relative;
-}
-.point-label {
-    font-size: 10px;
-    margin-top: 2px;
-}
-</style>
-""", unsafe_allow_html=True)
+# Classe principal do gerador
+class LotofacilGenerator:
+    def __init__(self, ultimo_sorteio, dezenas_fora):
+        self.ultimo_sorteio = sorted(ultimo_sorteio)
+        self.dezenas_fora = sorted(dezenas_fora)
+        self.todas_dezenas = list(range(1, 26))
+        self.quadrantes = [
+            [1, 2, 3, 4, 5],
+            [6, 7, 8, 9, 10],
+            [11, 12, 13, 14, 15],
+            [16, 17, 18, 19, 20],
+            [21, 22, 23, 24, 25]
+        ]
+        self.estatisticas = self.calcular_estatisticas()
+        self.peso_quadrantes = self.calcular_peso_quadrantes()
 
-# Inicialização
-if 'predictor' not in st.session_state:
-    st.session_state.predictor = BacBoPredictor()
+    def calcular_estatisticas(self):
+        """Calcula estatísticas vitais para a geração de jogos"""
+        stats = {
+            'repeticao_esperada': random.randint(7, 9),
+            'alvo_pares': random.randint(7, 9),
+            'alvo_impares': 15 - random.randint(7, 9),
+            'soma_ideal': random.randint(190, 210),
+            'freq_quadrantes': self.calcular_freq_quadrantes()
+        }
+        return stats
 
-# --- Layout Principal ---
-st.title("🎲 BAC BO PREDICTOR PRO")
+    def calcular_freq_quadrantes(self):
+        """Calcula a distribuição ideal por quadrantes"""
+        freq = []
+        total = 15
+        for _ in range(5):
+            q_min = max(1, total - 4 * (4 - len(freq)))
+            q_max = min(4, total - 1 * (4 - len(freq)))
+            valor = random.randint(q_min, q_max)
+            freq.append(valor)
+            total -= valor
+        return freq
 
-# Seção de Registro Rápido
-st.header("Registrar Resultado")
-col1, col2, col3 = st.columns(3)
+    def calcular_peso_quadrantes(self):
+        """Atribui pesos aos quadrantes baseado na frequência ideal"""
+        pesos = []
+        for i, q in enumerate(self.quadrantes):
+            peso = 10 + len(set(q) & set(self.ultimo_sorteio))
+            peso += self.estatisticas['freq_quadrantes'][i] * 2
+            pesos.append(peso)
+        return pesos
 
-with col1:
-    if st.button("🔵 PLAYER", key="player", help="Registrar vitória do Player",
-                use_container_width=True, type="primary", className="big-btn player-btn"):
-        pts = np.random.randint(3, 13)
-        st.session_state.predictor.add_result("Player", pts)
-        st.rerun()
+    def selecionar_dezenas_estrategicas(self):
+        """Seleciona 18 dezenas usando estratégias profissionais"""
+        selecionadas = set()
+        
+        # Adicionar números quentes (do último sorteio)
+        repetir = min(self.estatisticas['repeticao_esperada'], 10)
+        selecionadas.update(random.sample(self.ultimo_sorteio, repetir))
+        
+        # Adicionar números frios (dezenas ausentes)
+        adicionar = 18 - len(selecionadas)
+        selecionadas.update(random.sample(self.dezenas_fora, adicionar))
+        
+        # Balancear quadrantes
+        selecionadas = self.balancear_quadrantes(selecionadas)
+        
+        # Otimizar diversidade
+        selecionadas = self.otimizar_diversidade(selecionadas)
+        
+        return sorted(selecionadas)
 
-with col2:
-    if st.button("🔴 BANKER", key="banker", help="Registrar vitória do Banker",
-                use_container_width=True, type="primary", className="big-btn banker-btn"):
-        pts = np.random.randint(3, 13)
-        st.session_state.predictor.add_result("Banker", pts)
-        st.rerun()
+    def balancear_quadrantes(self, dezenas):
+        """Garante distribuição adequada por quadrantes"""
+        for i, q in enumerate(self.quadrantes):
+            no_quadrante = len(set(dezenas) & set(q))
+            alvo = self.estatisticas['freq_quadrantes'][i]
+            
+            if no_quadrante < alvo:
+                opcoes = list(set(q) - set(dezenas))
+                adicionar = min(alvo - no_quadrante, len(opcoes))
+                dezenas.update(random.sample(opcoes, adicionar))
+                
+            elif no_quadrante > alvo:
+                opcoes = list(set(dezenas) & set(q))
+                remover = min(no_quadrante - alvo, len(opcoes))
+                for num in random.sample(opcoes, remover):
+                    dezenas.remove(num)
+                    
+        return dezenas
 
-with col3:
-    if st.button("🟣 TIE", key="tie", help="Registrar empate",
-                use_container_width=True, type="primary", className="big-btn tie-btn"):
-        pts = np.random.randint(3, 13)
-        st.session_state.predictor.add_result("Tie", pts)
-        st.rerun()
+    def otimizar_diversidade(self, dezenas):
+        """Otimiza par/ímpar e soma numérica"""
+        pares = [d for d in dezenas if d % 2 == 0]
+        impares = [d for d in dezenas if d % 2 == 1]
+        diferenca = len(pares) - self.estatisticas['alvo_pares']
+        
+        if diferenca > 0:
+            trocar = random.sample(pares, diferenca)
+            opcoes = list(set(self.todas_dezenas) - set(dezenas) - set(impares))
+            dezenas = dezenas - set(trocar)
+            dezenas.update(random.sample(opcoes, diferenca))
+        elif diferenca < 0:
+            trocar = random.sample(impares, abs(diferenca))
+            opcoes = list(set(self.todas_dezenas) - set(dezenas) - set(pares))
+            dezenas = dezenas - set(trocar)
+            dezenas.update(random.sample(opcoes, abs(diferenca)))
+            
+        soma_atual = sum(dezenas)
+        while abs(soma_atual - self.estatisticas['soma_ideal']) > 15:
+            if soma_atual > self.estatisticas['soma_ideal']:
+                alto = max(dezenas)
+                baixo = min(set(self.todas_dezenas) - set(dezenas))
+                dezenas.remove(alto)
+                dezenas.add(baixo)
+            else:
+                baixo = min(dezenas)
+                alto = max(set(self.todas_dezenas) - set(dezenas))
+                dezenas.remove(baixo)
+                dezenas.add(alto)
+            soma_atual = sum(dezenas)
+            
+        return dezenas
 
-# Seção de Análise
-if st.session_state.predictor.game_history:
-    analysis = st.session_state.predictor.analyze()
+    def gerar_jogos_otimizados(self, quantidade=15):
+        """Gera jogos usando matriz de fechamento otimizada"""
+        dezenas_selecionadas = self.selecionar_dezenas_estrategicas()
+        jogos = []
+        
+        # Matriz de fechamento para 18 números
+        matriz = [
+            [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+            [1,2,3,4,5,6,7,8,16,17,18,9,10,11,12],
+            [1,2,3,4,5,9,10,11,13,14,15,16,17,18,6],
+            [1,2,3,6,7,8,9,10,11,12,13,14,15,16,17],
+            [1,2,3,6,7,8,9,12,13,14,15,16,17,18,4],
+            [1,2,4,5,6,7,8,9,10,11,12,13,14,15,18],
+            [1,4,5,6,7,8,10,11,12,13,14,15,16,17,18],
+            [2,3,4,5,6,7,8,9,10,11,12,16,17,18,13],
+            [2,3,4,5,9,10,11,12,13,14,15,16,17,18,1],
+            [2,3,5,7,8,9,10,11,12,13,14,15,16,17,18],
+            [3,4,5,6,7,8,9,10,11,12,13,14,15,17,18],
+            [1,2,3,4,5,7,8,11,12,13,14,15,16,17,18],
+            [1,2,3,4,6,9,10,11,12,13,14,15,16,17,18],
+            [1,2,3,5,6,8,10,11,12,13,14,15,16,17,18],
+            [1,2,4,5,6,7,9,10,11,12,13,14,15,16,17],
+            [1,3,4,5,6,7,8,9,10,11,12,14,15,16,17],
+            [1,3,4,5,7,8,9,10,11,12,13,15,16,17,18],
+            [1,3,5,6,7,8,9,10,12,13,14,15,16,17,18],
+            [2,3,4,5,6,7,8,10,11,12,13,14,15,16,18],
+            [2,4,5,6,7,8,9,10,11,13,14,15,16,17,18]
+        ]
+        
+        # Gerar jogos usando a matriz
+        for combinacao in matriz:
+            jogo = [dezenas_selecionadas[i-1] for i in combinacao]
+            jogos.append(sorted(jogo))
+            
+            if len(jogos) >= quantidade:
+                break
+                
+        return jogos[:quantidade]
+
+# Interface do Streamlit
+with st.form("entrada_dados"):
+    st.subheader("📊 Dados do Último Sorteio")
+    col1, col2 = st.columns(2)
     
-    # Layout em Colunas
-    col_anal, col_hist = st.columns([3, 2])
+    with col1:
+        st.write("**Números Sorteados** (15 números)")
+        ultimo_sorteio = st.text_input(
+            "Insira os números sorteados, separados por vírgula:",
+            "1,2,5,6,9,10,11,12,13,14,18,20,22,23,25"
+        )
     
-    with col_anal:
-        st.header("📊 Análise em Tempo Real")
-        
-        # Alertas
-        current_streak = analysis['current_streak']
-        if current_streak >= 3:
-            st.warning(f"🚨 Sequência detectada: {current_streak} jogos iguais")
-        
-        # Hot Zones
-        if analysis['hot_zones']:
-            st.subheader("Zonas Quentes")
-            cols = st.columns(len(analysis['hot_zones']))
-            for i, zone in enumerate(analysis['hot_zones']):
-                cols[i].metric(label=f"{zone} pontos", value="")
-        
-        # Gráfico
-        st.line_chart({
-            'Pontos': st.session_state.predictor.point_history[-20:]
-        })
-        
-        # Alerta de Tie
-        if analysis['tie_risk']:
-            st.markdown("""
-            <div style="
-                background: #e6f3ff;
-                border-left: 4px solid #0066cc;
-                padding: 10px;
-                border-radius: 5px;
-                margin: 10px 0;
-            ">
-                <b>⚠️ Alerta de Tie Possível</b>
-                <p>Média recente: {:.1f} pontos</p>
-            </div>
-            """.format(np.mean(st.session_state.predictor.point_history[-3:])),
-            unsafe_allow_html=True)
+    with col2:
+        st.write("**Dezenas Ausentes** (10 números)")
+        dezenas_ausentes = st.text_input(
+            "Insira as dezenas ausentes, separadas por vírgula:",
+            "3,4,7,8,15,16,17,19,21,24"
+        )
     
-    with col_hist:
-        st.header("📜 Histórico e Estatísticas")
-        
-        # Histórico Visual
-        st.subheader("Últimos Resultados")
-        history_html = "<div class='history-container'>"
-        for res, pts in zip(st.session_state.predictor.game_history[-8:], 
-                          st.session_state.predictor.point_history[-8:]):
-            color = "#3b82f6" if res == "PLAYER" else "#ef4444" if res == "BANKER" else "#a855f7"
-            history_html += f"""
-            <div class="history-item" style="background-color: {color}">
-                {pts}
-                <div class="point-label">{res[0]}</div>
-            </div>
-            """
-        history_html += "</div>"
-        st.markdown(history_html, unsafe_allow_html=True)
-        
-        # Estatísticas
-        st.subheader("Performance")
-        col_stat1, col_stat2 = st.columns(2)
-        with col_stat1:
-            st.metric("Total Jogos", len(st.session_state.predictor.game_history))
-            st.metric("Maior Sequência", analysis['current_streak'])
-        with col_stat2:
-            st.metric("Player Wins", st.session_state.predictor.win_stats['PLAYER'])
-            st.metric("Banker Wins", st.session_state.predictor.win_stats['BANKER'])
+    quantidade_jogos = st.slider("Quantidade de Jogos a Gerar", 10, 20, 15)
+    
+    submit_button = st.form_submit_button("✨ Gerar Jogos Otimizados")
 
-else:
-    st.info("Use os botões acima para registrar os primeiros resultados")
+# Processamento
+if submit_button:
+    try:
+        # Converter entradas em listas de inteiros
+        ultimo_sorteio = [int(x.strip()) for x in ultimo_sorteio.split(",") if x.strip().isdigit()]
+        dezenas_ausentes = [int(x.strip()) for x in dezenas_ausentes.split(",") if x.strip().isdigit()]
+        
+        if len(ultimo_sorteio) != 15 or len(dezenas_ausentes) != 10:
+            st.error("⚠️ Por favor, insira exatamente 15 números sorteados e 10 dezenas ausentes!")
+        else:
+            # Inicializar gerador
+            gerador = LotofacilGenerator(ultimo_sorteio, dezenas_ausentes)
+            
+            # Gerar jogos
+            with st.spinner('Gerando jogos otimizados...'):
+                jogos_gerados = gerador.gerar_jogos_otimizados(quantidade_jogos)
+            
+            # Exibir resultados
+            st.success(f"✅ {quantidade_jogos} jogos gerados com sucesso!")
+            st.subheader("🎲 Seus Jogos Otimizados")
+            
+            # Exibir jogos em colunas
+            cols = st.columns(3)
+            for i, jogo in enumerate(jogos_gerados):
+                with cols[i % 3]:
+                    st.markdown(f"**Jogo {i+1}**")
+                    st.write(jogo)
+            
+            # Botão para download
+            st.download_button(
+                label="📥 Baixar Todos os Jogos (CSV)",
+                data="\n".join([";".join(map(str, jogo)) for jogo in jogos_gerados]),
+                file_name="jogos_lotofacil.csv",
+                mime="text/csv"
+            )
+            
+    except Exception as e:
+        st.error(f"Erro: {str(e)}")
 
-# Botão de Reset
-if st.button("🔄 Reiniciar Sistema", type="secondary"):
-    st.session_state.predictor.reset()
-    st.rerun()
+# Informações adicionais
+st.sidebar.markdown("""
+### ℹ️ Sobre o Gerador
+Este sistema utiliza técnicas profissionais de apostas:
+- **Análise de padrões** de repetição
+- **Otimização matemática** de quadrantes
+- **Balanceamento** par/ímpar
+- **Fechamento estratégico** com garantia de cobertura
+
+### 📌 Dicas Importantes
+1. Verifique sempre os números inseridos
+2. Combine com seus palpites pessoais
+3. Jogue com responsabilidade
+
+### ⚠️ Aviso Legal
+Este app é apenas para entretenimento e não garante ganhos. As loterias são jogos de azar.
+""")
 
 # Rodapé
 st.markdown("---")
-st.caption("Bac Bo Predictor PRO v3.0 | Análise em tempo real")
+st.caption("Gerador Profissional de Jogos Lotofácil • Desenvolvido com Streamlit")
