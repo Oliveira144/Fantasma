@@ -91,25 +91,30 @@ def classify_baralho(history: List[str], window:int) -> Tuple[str, float, bool]:
     alt_score = alternation_score(w)
     avg_run = avg_run_length(w)
 
-    quase_repeticao = False
+    alerta_quase = False
 
+    # Repetição Forçada
     if avg_run >= 2.5 and e_ratio < 0.05:
         conf = min(1.0, (avg_run - 1.5) / 3.0 + (max(v_ratio,a_ratio) - 0.5))
         return "Repetição Forçada", max(0.15, conf), False
 
+    # Quase Repetição Forçada (alerta)
     if 2.0 <= avg_run < 2.5 and e_ratio < 0.05:
-        quase_repeticao = True
+        alerta_quase = True
         conf = min(1.0, (avg_run - 1.5) / 3.0 + (max(v_ratio,a_ratio) - 0.5))
-        return "Quase Repetição Forçada", max(0.1, conf), True
+        return "Quase Repetição Forçada", max(0.1, conf), alerta_quase
 
+    # Alternância Equilibrada
     if alt_score >= 0.6 and avg_run <= 1.5 and e_ratio < 0.1:
         conf = alt_score
         return "Alternância Equilibrada", conf, False
 
+    # Ancoragem por Empate
     if e_ratio >= 0.06 and any(i < 8 for i in tie_positions(w, window)):
         conf = min(1.0, e_ratio * 5 + (1 - alt_score)*0.3)
         return "Ancoragem por Empate", conf, False
 
+    # Inversão Psicológica
     if avg_run >= 3.0 and e_ratio >= 0.05 and alt_score < 0.4:
         conf = 0.5 + (avg_run - 3) * 0.1
         return "Inversão Psicológica", min(1.0, conf), False
@@ -153,7 +158,7 @@ def predict_next(history: List[str], window:int) -> Dict[str, float]:
 
     p = base.copy()
 
-    # Evita travar em aposta no empate: se último empate foi há mais de 3 rodadas, reduzir chance de empate
+    # Evita travar em empate: se último empate foi há mais de 3 rodadas, reduz chance de empate
     tie_pos = tie_positions(w, window)
     if tie_pos:
         last_tie_pos = max(tie_pos)
@@ -162,7 +167,6 @@ def predict_next(history: List[str], window:int) -> Dict[str, float]:
         else:
             p['E'] = max(p['E'], 0.05)
     else:
-        # sem empate recente, chance reduzida
         p['E'] *= 0.2
 
     if last in ('V','A') and avg_run >= 3.0:
@@ -202,26 +206,42 @@ def suggest_action(history: List[str], window:int) -> Tuple[str, Dict[str,float]
 
     last = history[0] if history else None
 
+    # Se confiança baixa, evitar aposta
+    if conf < 0.4:
+        return ("Evitar aposta — confiança baixa", preds, conf)
+
+    # Repetição Forçada - apostar contra a sequência
     if baralho == "Repetição Forçada" and last in ('V','A'):
         opp = 'A' if last == 'V' else 'V'
         return (f"Sugerir apostar em {EMOJI[opp]} (contra a sequência)", preds, conf)
 
+    # Quase repetição: alerta, evitar aposta
     if alerta_quase:
-        return ("Quase repetição detectada — atenção, padrão pode se confirmar", preds, conf)
+        return ("Quase repetição detectada — aguarde confirmação", preds, conf)
 
-    if conf < 0.35:
-        return ("Evitar aposta — confiança baixa", preds, conf)
+    # Ancoragem por Empate: aposta no empate só se alta confiança e alta chance, senão aposta na cor mais provável
+    if baralho == "Ancoragem por Empate":
+        if preds['E'] > 0.06 and conf > 0.5:
+            return ("Sugerir apostar no Empate 🟡 — provável interrupção", preds, conf)
+        else:
+            cor = max(('V','A'), key=lambda x: preds[x])
+            return (f"Sugerir apostar em {EMOJI[cor]} (padrão ancoragem por empate)", preds, conf)
 
-    if baralho == "Ancoragem por Empate" and preds['E'] > 0.06:
-        return ("Sugerir: atenção ao Empate 🟡 — possível interrupção", preds, conf)
-
-    if baralho == "Alternância Equilibrada":
+    # Alternância Equilibrada: aposta na cor oposta
+    if baralho == "Alternância Equilibrada" and last in ('V','A'):
         opp = 'A' if last == 'V' else 'V'
         return (f"Sugerir apostar em {EMOJI[opp]} (espera alternância)", preds, conf)
 
+    # Padrão Fantasma ou outros: aposta na cor com maior chance se confiança boa
+    maior_chance = max(preds, key=preds.get)
+    if maior_chance != 'E' and conf >= 0.5:
+        return (f"Sugerir apostar em {EMOJI[maior_chance]} (maior probabilidade)", preds, conf)
+
+    # Caso contrário, observar
     return ("Observar — sem sugestão forte", preds, conf)
 
-# UI
+# --- Streamlit UI ---
+
 st.title("Detector de Baralho & Estratégia — Football Studio")
 
 col1, col2 = st.columns([1,2])
