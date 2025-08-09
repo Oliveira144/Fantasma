@@ -3,14 +3,12 @@ import json
 import statistics
 from typing import List, Tuple, Dict
 
-# Configurações
 EMOJI = {'V': '🔴', 'A': '🔵', 'E': '🟡'}
 MAX_HISTORY = 200
 DEFAULT_WINDOW = 50
 
 st.set_page_config(page_title="Detector de Baralho & Estratégia - Football Studio", layout="wide", page_icon="🎯")
 
-# Estado persistente
 @st.cache_data
 def empty_state():
     return {'history': []}
@@ -20,7 +18,7 @@ if 'state' not in st.session_state:
 
 def add_result(code: str):
     hist = st.session_state.state['history']
-    hist.insert(0, code)  # mais recente à esquerda
+    hist.insert(0, code)
     if len(hist) > MAX_HISTORY:
         hist.pop()
     st.session_state.state['history'] = hist
@@ -80,7 +78,6 @@ def avg_run_length(history: List[str]) -> float:
 def tie_positions(history: List[str], window:int) -> List[int]:
     return [i for i, r in enumerate(windowed_list(history, window)) if r == 'E']
 
-# Classificação de baralho com limite sensível e alerta "quase repetição"
 def classify_baralho(history: List[str], window:int) -> Tuple[str, float, bool]:
     w = windowed_list(history, window)
     if not w:
@@ -101,7 +98,6 @@ def classify_baralho(history: List[str], window:int) -> Tuple[str, float, bool]:
         return "Repetição Forçada", max(0.15, conf), False
 
     if 2.0 <= avg_run < 2.5 and e_ratio < 0.05:
-        # Alerta para quase repetição
         quase_repeticao = True
         conf = min(1.0, (avg_run - 1.5) / 3.0 + (max(v_ratio,a_ratio) - 0.5))
         return "Quase Repetição Forçada", max(0.1, conf), True
@@ -157,6 +153,18 @@ def predict_next(history: List[str], window:int) -> Dict[str, float]:
 
     p = base.copy()
 
+    # Evita travar em aposta no empate: se último empate foi há mais de 3 rodadas, reduzir chance de empate
+    tie_pos = tie_positions(w, window)
+    if tie_pos:
+        last_tie_pos = max(tie_pos)
+        if last_tie_pos > 3:
+            p['E'] *= 0.3
+        else:
+            p['E'] = max(p['E'], 0.05)
+    else:
+        # sem empate recente, chance reduzida
+        p['E'] *= 0.2
+
     if last in ('V','A') and avg_run >= 3.0:
         opp = 'A' if last == 'V' else 'V'
         p[opp] += 0.20 * min(1.0, (avg_run-2)/4)
@@ -168,7 +176,6 @@ def predict_next(history: List[str], window:int) -> Dict[str, float]:
         p['V'] += p_switch/2
         p['A'] += p_switch/2
 
-    # Normaliza e ajusta valores
     for k in p:
         p[k] = max(0.0, p[k])
     s = sum(p.values())
@@ -195,12 +202,10 @@ def suggest_action(history: List[str], window:int) -> Tuple[str, Dict[str,float]
 
     last = history[0] if history else None
 
-    # Sugestão para repetição forçada (limiar sensível)
     if baralho == "Repetição Forçada" and last in ('V','A'):
         opp = 'A' if last == 'V' else 'V'
         return (f"Sugerir apostar em {EMOJI[opp]} (contra a sequência)", preds, conf)
 
-    # Alerta para quase repetição (média entre 2.0 e 2.5)
     if alerta_quase:
         return ("Quase repetição detectada — atenção, padrão pode se confirmar", preds, conf)
 
@@ -216,8 +221,7 @@ def suggest_action(history: List[str], window:int) -> Tuple[str, Dict[str,float]
 
     return ("Observar — sem sugestão forte", preds, conf)
 
-# --- UI ---
-
+# UI
 st.title("Detector de Baralho & Estratégia — Football Studio")
 
 col1, col2 = st.columns([1,2])
