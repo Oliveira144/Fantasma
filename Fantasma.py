@@ -21,7 +21,6 @@ EMOJIS = {'V': '🔴', 'A': '🔵', 'E': '🟡'}
 MAX_HISTORY = 200
 DEFAULT_WINDOW = 50
 
-# Inicializa o estado da sessão para armazenar o histórico
 if 'history' not in st.session_state:
     st.session_state.history = []
 
@@ -54,15 +53,11 @@ def windowed_list(history: List[str], window: int) -> List[str]:
 
 def compute_runs(history: List[str]) -> List[int]:
     """Calcula o comprimento das sequências (runs) ignorando empates."""
-    runs = []
-    if not history:
-        return runs
-    
-    # Filtra empates para análise de runs
     filtered_history = [r for r in history if r != 'E']
     if not filtered_history:
         return []
 
+    runs = []
     current_run_length = 1
     for i in range(1, len(filtered_history)):
         if filtered_history[i] == filtered_history[i-1]:
@@ -82,20 +77,16 @@ def frequency_counts(history: List[str]) -> Dict[str, int]:
 
 def alternation_score(history: List[str]) -> float:
     """Calcula a pontuação de alternância entre V e A."""
-    alternations = 0
-    total_pairs = 0
-    
-    # Filtra empates
     filtered_history = [r for r in history if r != 'E']
     if len(filtered_history) < 2:
         return 0.0
 
+    alternations = 0
     for i in range(1, len(filtered_history)):
-        total_pairs += 1
         if filtered_history[i] != filtered_history[i-1]:
             alternations += 1
             
-    return alternations / total_pairs if total_pairs > 0 else 0.0
+    return alternations / (len(filtered_history) - 1) if len(filtered_history) > 1 else 0.0
 
 def avg_run_length(history: List[str]) -> float:
     """Calcula o comprimento médio das sequências (runs)."""
@@ -158,7 +149,6 @@ def predict_next(history: List[str], window: int) -> Dict[str, float]:
     alt = alternation_score(w)
     last = w[0] if w else None
     
-    # Ajustes heurísticos
     if last in ('V', 'A') and avg_run >= 3.0:
         opp = 'A' if last == 'V' else 'V'
         adjustment = 0.25 * min(1.0, (avg_run - 2) / 4)
@@ -171,7 +161,6 @@ def predict_next(history: List[str], window: int) -> Dict[str, float]:
         p['V'] += switch_prob / 2
         p['A'] += switch_prob / 2
         
-    # Normaliza e garante que os valores sejam válidos
     for k in p:
         p[k] = max(0.0, p[k])
     
@@ -182,32 +171,31 @@ def predict_next(history: List[str], window: int) -> Dict[str, float]:
     return {k: round(v / total_prob, 3) for k, v in p.items()}
 
 def get_suggestion(history: List[str], window: int) -> Tuple[str, Dict[str, float], float]:
-    """Combina as análises para fornecer uma sugestão de aposta."""
-    baralho, bar_conf = classify_patterns(history, window)
+    """Fornece uma sugestão de aposta, priorizando o resultado mais provável."""
+    if not history or len(history) < 5:
+        preds = predict_next(history, window)
+        return "Aguardando mais dados para uma análise confiável.", preds, 0.1
+
+    baralho, conf = classify_patterns(history, window)
     preds = predict_next(history, window)
     
-    # Uma confiança baseada apenas na análise de padrão já é suficiente e menos complexa
-    conf = bar_conf
+    max_prob_key = max(preds, key=preds.get)
+    max_prob = preds[max_prob_key]
     
-    last = history[0] if history else None
+    suggestion = ""
     
-    if conf < 0.35:
-        return "Evitar aposta — confiança baixa na análise.", preds, conf
+    if baralho == "Sequência Forçada" and preds[history[0]] < preds['A' if history[0] == 'V' else 'V']:
+        # Se o padrão é de sequência mas a previsão aponta para o oposto
+        oposto = 'A' if history[0] == 'V' else 'V'
+        suggestion = f"Possível quebra de sequência! Aposte em **{EMOJIS[oposto]} {oposto}**."
+    elif max_prob_key == 'E' and max_prob > 0.08:
+        # Sugerir empate se a probabilidade for alta (acima da média)
+        suggestion = f"Atenção: A chance de **Empate {EMOJIS['E']}** está elevada."
+    else:
+        # Sugerir o resultado mais provável
+        suggestion = f"A melhor aposta, segundo a análise, é em **{EMOJIS[max_prob_key]} {max_prob_key}**."
         
-    if baralho == "Sequência Forçada" and last in ('V', 'A'):
-        opp = 'A' if last == 'V' else 'V'
-        if preds[opp] > preds[last]:
-            return f"Sugerir aposta em {EMOJIS[opp]} — possível quebra de sequência.", preds, conf
-            
-    if baralho == "Ancoragem por Empate" and preds['E'] > 0.1:
-        return "Sugerir atenção ao Empate 🟡 — pode ser o próximo resultado.", preds, conf
-        
-    if baralho == "Alternância Equilibrada" and last in ('V', 'A'):
-        opp = 'A' if last == 'V' else 'V'
-        if preds[opp] > preds[last]:
-            return f"Sugerir aposta em {EMOJIS[opp]} — esperar alternância.", preds, conf
-            
-    return "Observar — padrão sem sugestão forte.", preds, conf
+    return suggestion, preds, conf
 
 # --------------------------------------
 # Interface do Usuário (UI) Streamlit
@@ -252,7 +240,6 @@ def render_ui():
         if not st.session_state.history:
             st.info("Nenhum resultado ainda. Use os botões ao lado para começar a análise.")
         else:
-            # Exibe o histórico em formato de linhas
             per_row = 9
             history_display = st.session_state.history[:per_row * 10]
             for i in range(0, len(history_display), per_row):
@@ -282,7 +269,7 @@ def render_ui():
 
             st.markdown("---")
             st.markdown(f"**Sugestão:** {suggestion}")
-            st.info(f"**Confiança global da análise:** {int(conf * 100)}%")
+            st.info(f"**Confiança da análise:** {int(conf * 100)}%")
 
             st.markdown("---")
             st.write("**Métricas Técnicas**")
@@ -298,11 +285,9 @@ def render_ui():
 
     st.sidebar.title("Sobre este Detector")
     st.sidebar.markdown(
-        "Esta é uma ferramenta para **estudo de padrões** no jogo Football Studio. "
-        "Ela usa heurísticas simples para classificar o comportamento do baralho "
-        "e sugerir possíveis cenários futuros. As sugestões são baseadas em regras e "
-        "não garantem resultados. Aumente a janela de análise para obter "
-        "resultados mais confiáveis."
+        "Esta ferramenta é para **estudo de padrões** no jogo Football Studio. "
+        "Ela usa heurísticas para classificar o comportamento do baralho "
+        "e sugerir cenários futuros. A confiança indica a robustez da análise."
     )
     st.sidebar.markdown("---")
     st.sidebar.markdown("Feito com Python e Streamlit.")
