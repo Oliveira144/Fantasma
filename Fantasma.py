@@ -6,31 +6,39 @@ from typing import List, Tuple, Dict
 import statistics
 
 # --------------------------------------
+
 # Football Studio — Tipo de Baralho + Estratégia
+
 # Streamlit app (single-file)
+
 # Como usar: salvar como Football_Studio_Detector_Streamlit.py
+
 # executar: streamlit run Football_Studio_Detector_Streamlit.py
+
 # --------------------------------------
 
 st.set_page_config(page_title="Detector de Baralho & Estratégia - Football Studio", layout="wide", page_icon="🎯")
 
 # -----------------------------
+
 # Helpers
+
 # -----------------------------
 
 EMOJI = {'V': '🔴', 'A': '🔵', 'E': '🟡'}  # V = Vermelho, A = Azul, E = Empate
 MAX_HISTORY = 200
 DEFAULT_WINDOW = 50
+MIN_WINDOW = 12  # mínimo recomendado para análise
 
 @st.cache_data
 def empty_state():
     return {'history': []}
 
-# persistent state in session
+# Persistent state in session
 if 'state' not in st.session_state:
     st.session_state.state = empty_state()
 
-# add result to history
+# Add result to history
 def add_result(code: str):
     hist = st.session_state.state['history']
     hist.insert(0, code)  # mais recente à esquerda
@@ -47,7 +55,7 @@ def undo():
 def reset_history():
     st.session_state.state['history'] = []
 
-# metrics
+# Metrics
 
 def windowed_list(history: List[str], window: int) -> List[str]:
     return history[:window]
@@ -90,17 +98,15 @@ def alternation_score(history: List[str]) -> float:
         prev = r
     return (alt / pairs) if pairs > 0 else 0.0
 
-
 def avg_run_length(history: List[str]) -> float:
     runs = compute_runs([x for x in history if x != 'E'])
     return statistics.mean(runs) if runs else 0.0
-
 
 def tie_positions(history: List[str], window:int) -> List[int]:
     # positions (index) where ties appear in the window (0 = most recent)
     return [i for i, r in enumerate(windowed_list(history, window)) if r == 'E']
 
-# classification of baralho types
+# Classification of baralho types
 
 def classify_baralho(history: List[str], window:int) -> Tuple[str, float]:
     w = windowed_list(history, window)
@@ -133,7 +139,7 @@ def classify_baralho(history: List[str], window:int) -> Tuple[str, float]:
     balance_conf = 1 - abs(v_ratio - a_ratio)
     return "Balanceado / Indefinido", max(0.1, balance_conf * 0.9)
 
-# detect strategy
+# Detect strategy
 
 def detect_strategy(history: List[str], window:int) -> Tuple[str, float]:
     w = windowed_list(history, window)
@@ -142,10 +148,11 @@ def detect_strategy(history: List[str], window:int) -> Tuple[str, float]:
     avg_run = avg_run_length(w)
     alt = alternation_score(w)
     ties = frequency_counts(w)['E']
-    # look for patterns in last 6 results
     last6 = w[:6]
+
     # isco-reversao: sequência curta seguida de quebra súbita
-    if avg_run >= 2.5 and len(last6) >= 4 and compute_runs(last6 and last6) and compute_runs(last6)[0] >= 3:
+    runs_last6 = compute_runs(last6)
+    if avg_run >= 2.5 and len(last6) >= 4 and runs_last6 and runs_last6[0] >= 3:
         return "Isco-Reversão", 0.7
     # ruído controlado: muita alternância e ties
     if alt >= 0.55 and ties/len(w) > 0.03:
@@ -159,60 +166,57 @@ def detect_strategy(history: List[str], window:int) -> Tuple[str, float]:
         return "Padrão Fantasma", 0.45
     return "Estratégia Indefinida", 0.2
 
-# prediction: instead of saying "siga a sequência", prever chance de quebra
+# Prediction: prever chance de quebra (empate ou inversão)
 
 def predict_next(history: List[str], window:int) -> Dict[str, float]:
     w = windowed_list(history, window)
-    # base rates
     counts = frequency_counts(w)
     total = len(w) if len(w) > 0 else 1
     base = {k: counts.get(k,0)/total for k in ['V','A','E']}
-
     avg_run = avg_run_length(w)
     alt = alternation_score(w)
-
-    # if repetition for many rounds, increase chance of quebra (empate or opposite)
     last = w[0] if w else None
-
-    # start with base
     p = base.copy()
 
-    # heuristic adjustments
+    # Ajustes heurísticos:
     if last in ('V','A') and avg_run >= 3.0:
         # penaliza continuação; favorece inversão e empate
         opp = 'A' if last == 'V' else 'V'
-        p[opp] += 0.20 * min(1.0, (avg_run-2)/4)
-        p['E'] += 0.10 * min(1.0, (avg_run-2)/4)
-        p[last] -= 0.25 * min(1.0, (avg_run-2)/4)
+        fator = min(1.0, (avg_run-2)/4)
+        p[opp] += 0.20 * fator
+        p['E'] += 0.10 * fator
+        p[last] -= 0.25 * fator
+
     if alt >= 0.6:
         # alternância sugere continuação do alternar
-        # increase probability of switching vs repeating
         p_switch = 0.08
         p['V'] += p_switch/2
         p['A'] += p_switch/2
-    # normalize and clamp
+
+    # Normalizar e garantir não-negatividade
     for k in p:
-        p[k] = max(0.0, p[k])
+        if p[k] < 0:
+            p[k] = 0.0
     s = sum(p.values())
     if s == 0:
         p = {'V':0.48,'A':0.48,'E':0.04}
         s = 1
     for k in p:
         p[k] = round(p[k]/s, 3)
+
     return p
 
-# confidence scoring for suggestion
+# Confidence scoring for suggestion
 
 def compute_confidence(baralho_conf: float, strat_conf: float, history_len:int) -> float:
-    # combine confidences; penalize if history short
     base = 0.6*baralho_conf + 0.4*strat_conf
     penalty = 0.0
-    if history_len < 12:
-        penalty = (12 - history_len) / 30
+    if history_len < MIN_WINDOW:
+        penalty = (MIN_WINDOW - history_len) / 30
     conf = max(0.0, min(1.0, base - penalty))
     return round(conf, 3)
 
-# suggestion engine
+# Suggestion engine
 
 def suggest_action(history: List[str], window:int) -> Tuple[str, Dict[str,float], float]:
     baralho, bar_conf = classify_baralho(history, window)
@@ -220,32 +224,28 @@ def suggest_action(history: List[str], window:int) -> Tuple[str, Dict[str,float]
     preds = predict_next(history, window)
     conf = compute_confidence(bar_conf, strat_conf, len(history))
 
-    # rule-based suggestion
     last = history[0] if history else None
-    # default: evitar aposta se confiança baixa
+
     if conf < 0.35:
         return ("Evitar aposta — confiança baixa", preds, conf)
 
-    # se detectamos repetição forçada e a média de corrida já alta -> sugerir contra
     if baralho == "Repetição Forçada" and last in ('V','A'):
         opp = 'A' if last == 'V' else 'V'
         return (f"Sugerir apostar em {EMOJI[opp]} (contra a sequência)", preds, conf)
 
-    # se ancoragem por empate e empate tem prob alta
     if baralho == "Ancoragem por Empate" and preds['E'] > 0.06:
         return ("Sugerir: atenção ao Empate 🟡 — possível interrupção", preds, conf)
 
-    # se alternância equilibrada -> apostar na alternância (sugerir trocar)
     if baralho == "Alternância Equilibrada":
-        # sugerir apostar no oposto do último
         opp = 'A' if last == 'V' else 'V'
         return (f"Sugerir apostar em {EMOJI[opp]} (espera alternância)", preds, conf)
 
-    # fallback: sugerir observação
     return ("Observar — sem sugestão forte", preds, conf)
 
 # -----------------------------
+
 # Streamlit UI
+
 # -----------------------------
 
 st.title("Detector de Baralho & Estratégia — Football Studio")
@@ -262,12 +262,14 @@ with col1:
         add_result('E')
 
     st.write("")
+
     if st.button("Desfazer último"):
         undo()
     if st.button("Resetar histórico"):
         reset_history()
 
     st.markdown("---")
+
     st.subheader("Importar / Exportar")
     hist_json = json.dumps(st.session_state.state['history'])
     st.download_button("Exportar histórico (JSON)", hist_json, file_name="history_football_studio.json")
@@ -287,13 +289,13 @@ with col1:
 with col2:
     st.subheader("Histórico (mais recente à esquerda)")
     history = st.session_state.state['history']
-    # show up to 9 results per row, up to 10 rows as user asked previously
+
+    # show up to 9 results per row, up to 10 rows
     per_row = 9
     rows = []
     for i in range(0, min(len(history), per_row*10), per_row):
         rows.append(history[i:i+per_row])
 
-    # render rows
     for row in rows:
         cols = st.columns(len(row))
         for c, val in zip(cols, row):
@@ -301,7 +303,8 @@ with col2:
 
     st.markdown("---")
     st.subheader("Análise & Diagnóstico")
-    window = st.slider("Janela de análise (rodadas mais recentes)", min_value=12, max_value=DEFAULT_WINDOW, value=DEFAULT_WINDOW)
+
+    window = st.slider("Janela de análise (rodadas mais recentes)", min_value=MIN_WINDOW, max_value=DEFAULT_WINDOW, value=DEFAULT_WINDOW)
 
     if not history:
         st.info("Nenhum resultado ainda. Insira resultados para começar a análise.")
@@ -340,13 +343,17 @@ with col2:
         })
 
 st.sidebar.title("Sobre")
-st.sidebar.markdown("Detector simples que classifica heurísticamente tipos de baralho e estratégias a partir do histórico.\n\n"+
-"É uma base para você ir afinando os pesos, as regras e integrar modelos ML/IA mais avançados.\n\n"+
-"Use a opção de exportar/importar para persistir histórico localmente.")
+st.sidebar.markdown(
+    "Detector simples que classifica heurísticamente tipos de baralho e estratégias a partir do histórico.\n\n"
+    "É uma base para você ir afinando os pesos, as regras e integrar modelos ML/IA mais avançados.\n\n"
+    "Use a opção de exportar/importar para persistir histórico localmente."
+)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("Feito para estudo — Ajuste heurísticas conforme necessário.")
 
 # -----------------------------
+
 # Fim do app
+
 # -----------------------------
