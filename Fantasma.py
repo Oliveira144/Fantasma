@@ -1,296 +1,243 @@
 import streamlit as st
-import json
-import statistics
 from typing import List, Dict, Tuple
 
-# --------------------------------------
-# Configuração da Aplicação Streamlit
-# --------------------------------------
-
-st.set_page_config(
-    page_title="Detector de Padrões - Football Studio",
-    layout="wide",
-    page_icon="🎯"
-)
-
-# --------------------------------------
-# Constantes e Estado da Sessão
-# --------------------------------------
-
-EMOJIS = {'V': '🔴', 'A': '🔵', 'E': '🟡'}
+EMOJI = {'V': '🔴', 'A': '🔵', 'E': '🟡'}
 MAX_HISTORY = 200
 DEFAULT_WINDOW = 50
 
-if 'history' not in st.session_state:
-    st.session_state.history = []
+class ManipulationDetector:
+    def __init__(self, history: List[str]):
+        self.history = history
 
-# --------------------------------------
-# Funções de Gerenciamento de Histórico
-# --------------------------------------
+    def _compute_runs(self) -> List[int]:
+        runs = []
+        if not self.history:
+            return runs
+        cur = None
+        count = 0
+        for r in self.history:
+            if r == 'E':  # Ignore ties in runs
+                continue
+            if r == cur:
+                count += 1
+            else:
+                if count > 0:
+                    runs.append(count)
+                cur = r
+                count = 1
+        if count > 0:
+            runs.append(count)
+        return runs
 
-def add_result(code: str):
-    """Adiciona um resultado ao histórico."""
-    st.session_state.history.insert(0, code)
-    if len(st.session_state.history) > MAX_HISTORY:
-        st.session_state.history.pop()
+    def _frequency(self) -> Dict[str,int]:
+        return {k: self.history.count(k) for k in ['V','A','E']}
 
-def undo():
-    """Remove o último resultado do histórico."""
-    if st.session_state.history:
-        st.session_state.history.pop(0)
+    def _alternation_score(self) -> float:
+        pairs = 0
+        alt = 0
+        prev = None
+        for r in self.history:
+            if r == 'E':
+                prev = r
+                continue
+            if prev is None or prev == 'E':
+                prev = r
+                continue
+            pairs += 1
+            if r != prev:
+                alt += 1
+            prev = r
+        return (alt / pairs) if pairs > 0 else 0.0
 
-def reset_history():
-    """Limpa todo o histórico."""
-    st.session_state.history = []
+    # 10 níveis de análise
 
-# --------------------------------------
-# Funções de Análise e Métricas
-# --------------------------------------
+    def _analyze_level_1(self) -> Dict:
+        runs = self._compute_runs()
+        avg_run = sum(runs)/len(runs) if runs else 0
+        repetitive = avg_run > 3
+        confidence = min(1.0, avg_run/10)
+        return {"avg_run": avg_run, "repetitive_pattern": repetitive, "confidence": confidence}
 
-def windowed_list(history: List[str], window: int) -> List[str]:
-    """Retorna uma sublista do histórico com base na janela."""
-    return history[:window]
+    def _analyze_level_2(self) -> Dict:
+        alt_score = self._alternation_score()
+        strong_alt = alt_score > 0.7
+        return {"alternation_score": alt_score, "strong_alternation": strong_alt, "confidence": alt_score}
 
-def compute_runs(history: List[str]) -> List[int]:
-    """Calcula o comprimento das sequências (runs) ignorando empates."""
-    filtered_history = [r for r in history if r != 'E']
-    if not filtered_history:
-        return []
+    def _analyze_level_3(self) -> Dict:
+        freq = self._frequency()
+        e_ratio = freq['E'] / len(self.history) if self.history else 0
+        anchored = e_ratio > 0.1
+        return {"empate_ratio": e_ratio, "anchored_by_ties": anchored, "confidence": min(1.0, e_ratio*5)}
 
-    runs = []
-    current_run_length = 1
-    for i in range(1, len(filtered_history)):
-        if filtered_history[i] == filtered_history[i-1]:
-            current_run_length += 1
-        else:
-            runs.append(current_run_length)
-            current_run_length = 1
-    runs.append(current_run_length)
-    return runs
+    def _analyze_level_4(self) -> Dict:
+        runs = self._compute_runs()
+        alt_score = self._alternation_score()
+        cyclical = (len(runs) >= 4 and alt_score > 0.4 and max(runs) < 5)
+        confidence = 0.6 if cyclical else 0.2
+        return {"cyclical_pattern": cyclical, "confidence": confidence}
 
-def frequency_counts(history: List[str]) -> Dict[str, int]:
-    """Retorna a contagem de cada resultado (V, A, E)."""
-    counts = {'V': 0, 'A': 0, 'E': 0}
-    for result in history:
-        counts[result] += 1
-    return counts
+    def _analyze_level_5(self) -> Dict:
+        runs = self._compute_runs()
+        avg_run = sum(runs)/len(runs) if runs else 0
+        alt_score = self._alternation_score()
+        inverted = avg_run > 2.5 and alt_score < 0.4
+        confidence = 0.7 if inverted else 0.3
+        return {"inversion_detected": inverted, "confidence": confidence}
 
-def alternation_score(history: List[str]) -> float:
-    """Calcula a pontuação de alternância entre V e A."""
-    filtered_history = [r for r in history if r != 'E']
-    if len(filtered_history) < 2:
-        return 0.0
+    def _analyze_level_6(self) -> Dict:
+        freq = self._frequency()
+        e_ratio = freq['E'] / len(self.history) if self.history else 0
+        alt_score = self._alternation_score()
+        noise = alt_score > 0.5 and e_ratio > 0.03
+        confidence = 0.6 if noise else 0.2
+        return {"noise_detected": noise, "confidence": confidence}
 
-    alternations = 0
-    for i in range(1, len(filtered_history)):
-        if filtered_history[i] != filtered_history[i-1]:
-            alternations += 1
-            
-    return alternations / (len(filtered_history) - 1) if len(filtered_history) > 1 else 0.0
+    def _analyze_level_7(self) -> Dict:
+        freq = self._frequency()
+        alt_score = self._alternation_score()
+        v_a_diff = abs(freq['V'] - freq['A'])
+        ghost = v_a_diff <= 3 and alt_score > 0.35
+        confidence = 0.5 if ghost else 0.1
+        return {"ghost_pattern": ghost, "confidence": confidence}
 
-def avg_run_length(history: List[str]) -> float:
-    """Calcula o comprimento médio das sequências (runs)."""
-    runs = compute_runs(history)
-    return statistics.mean(runs) if runs else 0.0
+    def _analyze_level_8(self) -> Dict:
+        runs = self._compute_runs()
+        alt_score = self._alternation_score()
+        freq = self._frequency()
+        e_ratio = freq['E'] / len(self.history) if self.history else 0
+        quantum = alt_score > 0.45 and 1 <= max(runs, default=0) <= 3 and e_ratio > 0.05
+        confidence = 0.7 if quantum else 0.2
+        return {"quantum_pattern": quantum, "confidence": confidence}
 
-def tie_positions(history: List[str], window: int) -> List[int]:
-    """Encontra as posições dos empates na janela."""
-    return [i for i, r in enumerate(windowed_list(history, window)) if r == 'E']
+    def _analyze_level_9(self) -> Dict:
+        runs = self._compute_runs()
+        alt_score = self._alternation_score()
+        reversed_cycle = (len(runs) > 3 and runs[0] >= 3 and alt_score < 0.5)
+        confidence = 0.6 if reversed_cycle else 0.1
+        return {"reversed_cycle": reversed_cycle, "confidence": confidence}
 
-# --------------------------------------
-# Funções de Classificação e Sugestão
-# --------------------------------------
+    def _analyze_level_10(self) -> Dict:
+        freq = self._frequency()
+        e_ratio = freq['E'] / len(self.history) if self.history else 0
+        runs = self._compute_runs()
+        avg_run = sum(runs)/len(runs) if runs else 0
+        collapse = avg_run > 5 and e_ratio < 0.03
+        confidence = 0.8 if collapse else 0.1
+        return {"max_manipulation": collapse, "confidence": confidence}
 
-def classify_patterns(history: List[str], window: int) -> Tuple[str, float]:
-    """Analisa o histórico e classifica o padrão do jogo."""
-    w = windowed_list(history, window)
-    if not w:
-        return "Indefinido", 0.0
+    def analyze_levels(self) -> Dict[int, Dict]:
+        results = {}
+        for lvl in range(1, 11):
+            func = getattr(self, f"_analyze_level_{lvl}", None)
+            if func:
+                results[lvl] = func()
+            else:
+                results[lvl] = {"status": "Nível não implementado"}
+        return results
 
-    freq = frequency_counts(w)
-    total = len(w)
-    v_ratio = freq['V'] / total
-    a_ratio = freq['A'] / total
-    e_ratio = freq['E'] / total
+    def predict_next(self) -> Dict[str,float]:
+        levels = self.analyze_levels()
+        base_probs = {"V": 0.48, "A": 0.48, "E": 0.04}
 
-    alt_score = alternation_score(w)
-    avg_run = avg_run_length(w)
-    
-    # Regras e Heurísticas
-    if avg_run >= 3.0 and e_ratio < 0.05:
-        conf = min(1.0, (avg_run - 2.0) / 4.0 + (max(v_ratio, a_ratio) - 0.5))
-        return "Sequência Forçada", max(0.15, conf)
-    
-    if alt_score >= 0.6 and avg_run <= 1.5 and e_ratio < 0.1:
-        return "Alternância Equilibrada", alt_score
-    
-    if e_ratio >= 0.06 and any(i < 8 for i in tie_positions(w, window)):
-        conf = min(1.0, e_ratio * 5 + (1 - alt_score) * 0.3)
-        return "Ancoragem por Empate", conf
-    
-    if avg_run >= 3.0 and e_ratio >= 0.05 and alt_score < 0.4:
-        conf = 0.5 + (avg_run - 3) * 0.1
-        return "Inversão Psicológica", min(1.0, conf)
-        
-    balance_conf = 1 - abs(v_ratio - a_ratio)
-    return "Balanceado / Aleatório", max(0.1, balance_conf * 0.9)
+        # Ajustes simples baseados nos níveis detectados
+        for lvl, res in levels.items():
+            conf = res.get("confidence", 0)
+            if lvl == 1 and res.get("repetitive_pattern", False):
+                base_probs["E"] += 0.1 * conf
+                base_probs["V"] -= 0.05 * conf
+                base_probs["A"] -= 0.05 * conf
+            if lvl == 2 and res.get("strong_alternation", False):
+                base_probs["V"] += 0.05 * conf
+                base_probs["A"] += 0.05 * conf
+                base_probs["E"] -= 0.05 * conf
+            # Continue com mais regras se quiser...
 
-def predict_next(history: List[str], window: int) -> Dict[str, float]:
-    """Prevê as probabilidades do próximo resultado com base em heurísticas."""
-    w = windowed_list(history, window)
-    if not w:
-        return {'V': 0.48, 'A': 0.48, 'E': 0.04}
+        # Normaliza
+        total = sum(base_probs.values())
+        for k in base_probs:
+            base_probs[k] = max(0, base_probs[k]/total)
 
-    counts = frequency_counts(w)
-    total = len(w)
-    p = {k: counts.get(k, 0) / total for k in EMOJIS.keys()}
-    
-    avg_run = avg_run_length(w)
-    alt = alternation_score(w)
-    last = w[0] if w else None
-    
-    if last in ('V', 'A') and avg_run >= 3.0:
-        opp = 'A' if last == 'V' else 'V'
-        adjustment = 0.25 * min(1.0, (avg_run - 2) / 4)
-        p[opp] += adjustment
-        p['E'] += adjustment / 2
-        p[last] -= adjustment * 1.5
-        
-    if alt >= 0.6:
-        switch_prob = 0.08
-        p['V'] += switch_prob / 2
-        p['A'] += switch_prob / 2
-        
-    for k in p:
-        p[k] = max(0.0, p[k])
-    
-    total_prob = sum(p.values())
-    if total_prob == 0:
-        return {'V': 0.48, 'A': 0.48, 'E': 0.04}
-    
-    return {k: round(v / total_prob, 3) for k, v in p.items()}
+        return base_probs
 
-def get_suggestion(history: List[str], window: int) -> Tuple[str, Dict[str, float], float]:
-    """Fornece uma sugestão de aposta, priorizando o resultado mais provável."""
-    if not history or len(history) < 5:
-        preds = predict_next(history, window)
-        return "Aguardando mais dados para uma análise confiável.", preds, 0.1
+    def suggest_bet(self) -> Tuple[str, float]:
+        preds = self.predict_next()
+        best = max(preds, key=preds.get)
+        conf = preds[best]
+        return best, conf
 
-    baralho, conf = classify_patterns(history, window)
-    preds = predict_next(history, window)
-    
-    max_prob_key = max(preds, key=preds.get)
-    max_prob = preds[max_prob_key]
-    
-    suggestion = ""
-    
-    if baralho == "Sequência Forçada" and preds[history[0]] < preds['A' if history[0] == 'V' else 'V']:
-        # Se o padrão é de sequência mas a previsão aponta para o oposto
-        oposto = 'A' if history[0] == 'V' else 'V'
-        suggestion = f"Possível quebra de sequência! Aposte em **{EMOJIS[oposto]} {oposto}**."
-    elif max_prob_key == 'E' and max_prob > 0.08:
-        # Sugerir empate se a probabilidade for alta (acima da média)
-        suggestion = f"Atenção: A chance de **Empate {EMOJIS['E']}** está elevada."
-    else:
-        # Sugerir o resultado mais provável
-        suggestion = f"A melhor aposta, segundo a análise, é em **{EMOJIS[max_prob_key]} {max_prob_key}**."
-        
-    return suggestion, preds, conf
 
-# --------------------------------------
-# Interface do Usuário (UI) Streamlit
-# --------------------------------------
+# --- Streamlit UI ---
 
-def render_ui():
-    """Renderiza a interface principal do aplicativo."""
-    st.title("Detector de Padrões - Football Studio")
-    
-    col_input, col_display = st.columns([1, 2])
-    
-    with col_input:
-        st.subheader("Inserir Resultado")
-        c1, c2, c3 = st.columns(3)
-        c1.button(f"{EMOJIS['V']} Vermelho (V)", on_click=add_result, args=['V'])
-        c2.button(f"{EMOJIS['A']} Azul (A)", on_click=add_result, args=['A'])
-        c3.button(f"{EMOJIS['E']} Empate (E)", on_click=add_result, args=['E'])
+def main():
+    st.set_page_config(page_title="Detector de Manipulação Football Studio", page_icon="🎯", layout="wide")
 
-        st.markdown("---")
-        st.button("Desfazer último", on_click=undo)
-        st.button("Resetar histórico", on_click=reset_history)
+    if 'history' not in st.session_state:
+        st.session_state.history = []
 
-        st.markdown("---")
-        st.subheader("Importar / Exportar")
-        hist_json = json.dumps(st.session_state.history)
-        st.download_button("Exportar histórico (JSON)", hist_json, file_name="history_football_studio.json")
+    st.title("Detector de Manipulação Football Studio")
 
-        uploaded = st.file_uploader("Importar histórico (JSON)", type=['json'])
-        if uploaded:
-            try:
-                data = json.load(uploaded)
-                if isinstance(data, list):
-                    st.session_state.history = data[:MAX_HISTORY]
-                    st.success("Histórico importado com sucesso!")
-                else:
-                    st.error("Formato inválido. O arquivo JSON deve ser uma lista.")
-            except Exception as e:
-                st.error(f"Erro ao importar: {e}")
+    col1, col2, col3 = st.columns(3)
+    if col1.button(f"{EMOJI['V']} Vermelho (V)"):
+        st.session_state.history.insert(0, 'V')
+    if col2.button(f"{EMOJI['A']} Azul (A)"):
+        st.session_state.history.insert(0, 'A')
+    if col3.button(f"{EMOJI['E']} Empate (E)"):
+        st.session_state.history.insert(0, 'E')
 
-    with col_display:
-        st.subheader("Histórico (Mais Recente à Esquerda)")
-        if not st.session_state.history:
-            st.info("Nenhum resultado ainda. Use os botões ao lado para começar a análise.")
-        else:
-            per_row = 9
-            history_display = st.session_state.history[:per_row * 10]
-            for i in range(0, len(history_display), per_row):
-                row_cols = st.columns(per_row)
-                for j, result in enumerate(history_display[i:i + per_row]):
-                    row_cols[j].markdown(f"### {EMOJIS[result]}")
+    if st.button("Desfazer último"):
+        if st.session_state.history:
+            st.session_state.history.pop(0)
 
-            st.markdown("---")
-            st.subheader("Análise & Diagnóstico")
-            window = st.slider(
-                "Janela de análise (rodadas mais recentes)",
-                min_value=12,
-                max_value=MAX_HISTORY,
-                value=DEFAULT_WINDOW
-            )
-            
-            baralho, bar_conf = classify_patterns(st.session_state.history, window)
-            suggestion, preds, conf = get_suggestion(st.session_state.history, window)
+    if st.button("Resetar histórico"):
+        st.session_state.history = []
 
-            st.metric("Padrão de Jogo", baralho, delta=f"Confiança: {int(bar_conf * 100)}%")
-            
-            st.markdown("**Probabilidade Prevista (Próxima Rodada)**")
-            cols_prob = st.columns(3)
-            for i, (key, value) in enumerate(preds.items()):
-                cols_prob[i].progress(int(value * 100))
-                cols_prob[i].write(f"{EMOJIS[key]} {key} — {value * 100:.1f}%")
+    st.markdown("---")
 
-            st.markdown("---")
-            st.markdown(f"**Sugestão:** {suggestion}")
-            st.info(f"**Confiança da análise:** {int(conf * 100)}%")
+    st.subheader("Histórico (mais recente à esquerda)")
+    per_row = 9
+    rows = []
+    history = st.session_state.history[:MAX_HISTORY]
+    for i in range(0, min(len(history), per_row*10), per_row):
+        rows.append(history[i:i+per_row])
+    for row in rows:
+        cols = st.columns(len(row))
+        for c, val in zip(cols, row):
+            c.markdown(f"### {EMOJI[val]}")
 
-            st.markdown("---")
-            st.write("**Métricas Técnicas**")
-            w_list = windowed_list(st.session_state.history, window)
-            st.json({
-                'Janela': window,
-                'Tamanho histórico': len(st.session_state.history),
-                'Frequência na janela': frequency_counts(w_list),
-                'Alternância': round(alternation_score(w_list), 3),
-                'Média de runs (sem empates)': round(avg_run_length(w_list), 3),
-                'Posições de empate (0=mais recente)': tie_positions(w_list, window)
-            })
+    st.markdown("---")
 
-    st.sidebar.title("Sobre este Detector")
-    st.sidebar.markdown(
-        "Esta ferramenta é para **estudo de padrões** no jogo Football Studio. "
-        "Ela usa heurísticas para classificar o comportamento do baralho "
-        "e sugerir cenários futuros. A confiança indica a robustez da análise."
-    )
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("Feito com Python e Streamlit.")
+    if not history:
+        st.info("Insira resultados para começar a análise.")
+        return
+
+    window = st.slider("Janela de análise (mais recentes resultados)", min_value=12, max_value=DEFAULT_WINDOW, value=min(DEFAULT_WINDOW, len(history)))
+    history_window = history[:window]
+
+    detector = ManipulationDetector(history_window)
+    levels = detector.analyze_levels()
+    prediction = detector.predict_next()
+    suggested_bet, conf = detector.suggest_bet()
+
+    st.subheader("Análise dos 10 níveis de manipulação")
+    for lvl in range(1, 11):
+        res = levels.get(lvl, {})
+        conf_level = res.get("confidence", 0)
+        details = {k:v for k,v in res.items() if k != "confidence"}
+        st.markdown(f"**Nível {lvl}:** Confiança {conf_level*100:.1f}% — Detalhes: {details}")
+
+    st.markdown("---")
+
+    st.subheader("Previsão para próximo resultado")
+    cols = st.columns(3)
+    cols[0].progress(int(prediction['V']*100))
+    cols[0].write(f"{EMOJI['V']} Vermelho — {prediction['V']*100:.1f}%")
+    cols[1].progress(int(prediction['A']*100))
+    cols[1].write(f"{EMOJI['A']} Azul — {prediction['A']*100:.1f}%")
+    cols[2].progress(int(prediction['E']*100))
+    cols[2].write(f"{EMOJI['E']} Empate — {prediction['E']*100:.1f}%")
+
+    st.subheader("Sugestão de aposta")
+    st.info(f"Apostar em {EMOJI[suggested_bet]} (confiança: {conf*100:.1f}%)")
 
 if __name__ == "__main__":
-    render_ui()
+    main()
