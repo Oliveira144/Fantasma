@@ -190,8 +190,8 @@ def main():
     history = st.session_state.history[:MAX_HISTORY]
 
     if history:
-        # Mostrar horizontal, do mais recente (esquerda) para o mais antigo (direita)
-        st.markdown(" ".join(EMOJI[val] for val in reversed(history)))
+        # Mostrar do mais recente (esquerda) para o mais antigo (direita)
+        st.markdown(" ".join(EMOJI[val] for val in history))
     else:
         st.write("Nenhum resultado registrado.")
 
