@@ -135,8 +135,23 @@ class ManipulationDetector:
 
     def predict_next(self) -> Dict[str,float]:
         levels = self.analyze_levels()
-        base_probs = {"V": 0.48, "A": 0.48, "E": 0.04}
 
+        # Frequência real no histórico atual
+        freq = self._frequency()
+        total = len(self.history) if self.history else 1  # evitar divisão por zero
+        base_probs = {
+            "V": freq.get('V', 0) / total,
+            "A": freq.get('A', 0) / total,
+            "E": freq.get('E', 0) / total
+        }
+
+        # Ajuste básico para evitar zero absoluto
+        min_prob = 0.01
+        for k in base_probs:
+            if base_probs[k] < min_prob:
+                base_probs[k] = min_prob
+
+        # Ajuste com base nos níveis detectados
         for lvl, res in levels.items():
             conf = res.get("confidence", 0)
             if lvl == 1 and res.get("repetitive_pattern", False):
@@ -148,9 +163,10 @@ class ManipulationDetector:
                 base_probs["A"] += 0.05 * conf
                 base_probs["E"] -= 0.05 * conf
 
-        total = sum(base_probs.values())
+        # Normalizar para somar 1 e garantir que nenhuma prob seja negativa
+        total_prob = sum(max(0, v) for v in base_probs.values())
         for k in base_probs:
-            base_probs[k] = max(0, base_probs[k]/total)
+            base_probs[k] = max(0, base_probs[k]) / total_prob if total_prob > 0 else 1/3
 
         return base_probs
 
