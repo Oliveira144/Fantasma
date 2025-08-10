@@ -16,7 +16,7 @@ class ManipulationDetector:
         cur = None
         count = 0
         for r in self.history:
-            if r == 'E':  # Ignore ties in runs
+            if r == 'E':  # Ignorar empates nos runs
                 continue
             if r == cur:
                 count += 1
@@ -48,8 +48,6 @@ class ManipulationDetector:
                 alt += 1
             prev = r
         return (alt / pairs) if pairs > 0 else 0.0
-
-    # 10 níveis de análise
 
     def _analyze_level_1(self) -> Dict:
         runs = self._compute_runs()
@@ -139,7 +137,6 @@ class ManipulationDetector:
         levels = self.analyze_levels()
         base_probs = {"V": 0.48, "A": 0.48, "E": 0.04}
 
-        # Ajustes simples baseados nos níveis detectados
         for lvl, res in levels.items():
             conf = res.get("confidence", 0)
             if lvl == 1 and res.get("repetitive_pattern", False):
@@ -150,9 +147,7 @@ class ManipulationDetector:
                 base_probs["V"] += 0.05 * conf
                 base_probs["A"] += 0.05 * conf
                 base_probs["E"] -= 0.05 * conf
-            # Continue com mais regras se quiser...
 
-        # Normaliza
         total = sum(base_probs.values())
         for k in base_probs:
             base_probs[k] = max(0, base_probs[k]/total)
@@ -164,9 +159,6 @@ class ManipulationDetector:
         best = max(preds, key=preds.get)
         conf = preds[best]
         return best, conf
-
-
-# --- Streamlit UI ---
 
 def main():
     st.set_page_config(page_title="Detector de Manipulação Football Studio", page_icon="🎯", layout="wide")
@@ -194,15 +186,14 @@ def main():
     st.markdown("---")
 
     st.subheader("Histórico (mais recente à esquerda)")
-    per_row = 9
-    rows = []
+
     history = st.session_state.history[:MAX_HISTORY]
-    for i in range(0, min(len(history), per_row*10), per_row):
-        rows.append(history[i:i+per_row])
-    for row in rows:
-        cols = st.columns(len(row))
-        for c, val in zip(cols, row):
-            c.markdown(f"### {EMOJI[val]}")
+
+    if history:
+        # Mostrar horizontal, do mais recente (esquerda) para o mais antigo (direita)
+        st.markdown(" ".join(EMOJI[val] for val in reversed(history)))
+    else:
+        st.write("Nenhum resultado registrado.")
 
     st.markdown("---")
 
@@ -222,8 +213,7 @@ def main():
     for lvl in range(1, 11):
         res = levels.get(lvl, {})
         conf_level = res.get("confidence", 0)
-        details = {k:v for k,v in res.items() if k != "confidence"}
-        st.markdown(f"**Nível {lvl}:** Confiança {conf_level*100:.1f}% — Detalhes: {details}")
+        st.markdown(f"**Nível {lvl}:** Confiança {conf_level*100:.1f}%")
 
     st.markdown("---")
 
